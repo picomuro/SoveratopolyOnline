@@ -1,0 +1,784 @@
+/**
+ * Soveratopoly — client.
+ * Il client non decide nulla: invia intenzioni al server ("tira", "compra"...)
+ * e mostra lo stato che riceve, animando dadi e pedine.
+ */
+(() => {
+  const { CELLS, RULES, BOUNDS: BD, REACTIONS, euro, ...S } = window.SOVERATO;
+  const $ = (sel) => document.querySelector(sel);
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // ------------------------------------------------------------------------
+  // Sessione salvata nel browser: permette di rientrare nello stesso posto.
+  // ------------------------------------------------------------------------
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage non disponibile */ } },
+    del(k) { try { localStorage.removeItem(k); } catch { /* idem */ } },
+  };
+  let session = store.get('sov_session'); // { code, token, playerId }
+  const setSession = (s) => { session = s; store.set('sov_session', s); };
+  const clearSession = () => { session = null; store.del('sov_session'); };
+
+  // Un link di invito a un'altra stanza vince sulla sessione salvata.
+  const urlCode = (new URLSearchParams(location.search).get('r') || '').toUpperCase().slice(0, 4);
+  if (urlCode && session && session.code !== urlCode) clearSession();
+
+  let state = null;        // ultimo stato ricevuto dal server
+  let clockOffset = 0;     // differenza orologio server/client per i countdown
+  let replaced = false;    // la partita è stata aperta in un'altra scheda
+  const shown = {};        // casella su cui è disegnata ogni pedina (può precedere lo stato durante le animazioni)
+  const shownJail = {};    // la pedina è disegnata dentro la prigione?
+
+  const meId = () => session?.playerId;
+  const pl = (id) => state.players.find((p) => p.id === id);
+  const isMyTurn = () => state?.phase === 'playing' && state.turn.playerId === meId();
+  /** Case, ipoteche e scambi: solo nel proprio turno, non mentre si decide un acquisto. */
+  const canManage = () => isMyTurn() && state.turn.phase !== 'buy';
+  const propsOf = (id) => Object.keys(state.props).map(Number).filter((i) => state.props[i].owner === id);
+  const groupHasHouses = (i) => S.groupOf(i).some((c) => state.props[c].houses > 0);
+
+  // ------------------------------------------------------------------------
+  // Connessione con retry progressivo (1 s → 10 s, all'infinito).
+  // Stessa origine: nessun indirizzo scritto a mano.
+  // ------------------------------------------------------------------------
+  const socket = io({
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    reconnectionDelayMax: 10000,
+    randomizationFactor: 0.4,
+    timeout: 20000,
+  });
+  let everConnected = false;
+
+  function showWake(text, sub = '') {
+    $('#wake-text').textContent = text;
+    $('#wake-sub').textContent = sub;
+    $('#wake').classList.add('show');
+  }
+
+  socket.on('connect', () => {
+    everConnected = true;
+    $('#wake').classList.remove('show');
+    if (session && !replaced) rejoin(); // una scheda sostituita non si riprende il posto da sola
+  });
+  socket.on('disconnect', () => showWake('Connessione persa, mi riconnetto…'));
+  socket.on('connect_error', () => {
+    if (!everConnected) showWake('Sto svegliando il server, attendi qualche secondo…',
+      'Il server gratuito si addormenta dopo 15 minuti: può volerci fino a un minuto.');
+  });
+  socket.io.on('reconnect_attempt', (n) => { $('#wake-sub').textContent = `Tentativo ${n}…`; });
+
+  /**
+   * Invia un'azione al server e attende la risposta.
+   * Ritorna la risposta, oppure null in caso di errore (già mostrato all'utente, salvo quiet).
+   */
+  function send(event, payload = {}, { quiet = false } = {}) {
+    if (replaced && event !== 'room:rejoin') { showReplaced(); return Promise.resolve(null); }
+    return new Promise((resolve) => {
+      socket.timeout(10000).emit(event, payload, (err, res) => {
+        if (!err && res.ok) return resolve(res);
+        if (!quiet) {
+          if (err) toast('Il server non risponde, riprova.');
+          else if (res.error === 'ROOM_NOT_FOUND') roomGone(res.message);
+          else toast(res.message || 'Errore');
+        }
+        resolve(null);
+      });
+    });
+  }
+
+  function rejoin() {
+    replaced = false;
+    return send('room:rejoin', { code: session.code, token: session.token });
+  }
+
+  /** Crea una stanza o entra in una esistente. */
+  let entering = false;
+  async function enter(event, payload) {
+    if (entering) return; // evita doppi clic
+    entering = true;
+    const res = await send(event, payload);
+    entering = false;
+    if (!res) return;
+    setSession({ code: res.code, token: res.token, playerId: res.playerId });
+    history.replaceState(null, '', `?r=${res.code}`);
+  }
+
+  function backToLobby() {
+    clearSession();
+    state = null;
+    history.replaceState(null, '', location.pathname);
+    $('#victory').classList.remove('show');
+    showScreen('lobby');
+  }
+
+  /** La stanza non esiste più (riavvio del server, stanza scaduta, posto perso). */
+  function roomGone(message) {
+    const code = session?.code || '';
+    backToLobby();
+    openModal(`
+      <div class="big-emoji">😴</div>
+      <h2>La stanza ${esc(code)} non è più disponibile</h2>
+      <p>${esc(message)}</p>
+      <button class="btn btn-big btn-pink" id="m-new">✨ Crea una nuova stanza</button>
+      <button class="btn btn-ghost" data-close>Torna alla home</button>`);
+    $('#m-new').onclick = () => { closeModal(); createRoom(); };
+  }
+
+  /** Lo stesso giocatore ha aperto la partita in un'altra scheda: questa si ferma. */
+  function showReplaced() {
+    openModal(`
+      <div class="big-emoji">🪟</div>
+      <h2>Partita aperta in un'altra scheda</h2>
+      <p>Puoi continuare lì, oppure riprendere a giocare qui.</p>
+      <button class="btn btn-big btn-blue" id="m-here">Gioca qui</button>`);
+    $('#m-here').onclick = () => { closeModal(); rejoin(); };
+  }
+  socket.on('session:replaced', () => { replaced = true; showReplaced(); });
+
+  // ------------------------------------------------------------------------
+  // Coda: animazioni e stati vengono mostrati nell'ordine in cui arrivano.
+  // ------------------------------------------------------------------------
+  const queue = [];
+  let running = false;
+  let waitingAnims = 0;
+  async function runQueue() {
+    if (running) return;
+    running = true;
+    while (queue.length) {
+      try { await queue.shift()(); } catch (e) { console.error(e); }
+    }
+    running = false;
+  }
+  // La coda parte con setTimeout: se la risposta a "crea/entra" e il primo stato arrivano
+  // nello stesso pacchetto, la sessione viene salvata prima di elaborare lo stato.
+  socket.on('room:state', (s) => { queue.push(() => applyState(s)); setTimeout(runQueue); });
+  socket.on('game:anim', (a) => {
+    waitingAnims++;
+    queue.push(() => { waitingAnims--; return playAnim(a.steps); });
+    setTimeout(runQueue);
+  });
+  socket.on('chat:reaction', showReaction);
+
+  // ------------------------------------------------------------------------
+  // Schermate
+  // ------------------------------------------------------------------------
+  function showScreen(name) {
+    for (const s of ['lobby', 'wait', 'game']) $(`#screen-${s}`).classList.toggle('hidden', s !== name);
+  }
+
+  function applyState(s) {
+    if (!session) return; // stato in arrivo mentre stavamo uscendo
+    if (!s.players.some((p) => p.id === meId())) return backToLobby(); // il nostro posto è stato liberato
+    const prev = state;
+    state = s;
+    clockOffset = s.serverNow - Date.now();
+    if (s.phase === 'lobby') { showScreen('wait'); renderWait(); return; }
+    showScreen('game');
+    renderGame(prev);
+    renderVictory();
+  }
+
+  // ---------- Lobby ----------
+  const nickInput = $('#nick');
+  const codeInput = $('#code');
+  nickInput.value = store.get('sov_nick') || '';
+  codeInput.value = urlCode;
+
+  function getNick() {
+    const n = nickInput.value.trim();
+    if (!n) { toast('Scrivi prima il tuo nickname 😉'); nickInput.focus(); return null; }
+    store.set('sov_nick', n);
+    return n;
+  }
+  function createRoom() {
+    const nickname = getNick();
+    if (nickname) enter('room:create', { nickname });
+  }
+  function joinRoom() {
+    const nickname = getNick();
+    if (!nickname) return;
+    const code = codeInput.value.trim().toUpperCase();
+    if (code.length !== 4) return toast('Il codice ha 4 lettere');
+    enter('room:join', { code, nickname });
+  }
+  $('#btn-create').onclick = createRoom;
+  $('#btn-join').onclick = joinRoom;
+  codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
+  nickInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') (codeInput.value.trim() ? joinRoom : createRoom)(); });
+
+  // ---------- Sala d'attesa ----------
+  function renderWait() {
+    $('#wait-code').textContent = state.code;
+    $('#wait-players').innerHTML = state.players.map((p) => `
+      <li><span class="dot" style="background:${p.color}"></span>
+      <b>${esc(p.nickname)}</b>${p.id === meId() ? ' (tu)' : ''} ${p.id === state.hostId ? '👑' : ''} ${p.connected ? '' : '📴'}</li>`).join('');
+    const isHost = state.hostId === meId();
+    const ready = state.players.filter((p) => p.connected).length;
+    $('#btn-start').classList.toggle('hidden', !isHost);
+    $('#btn-start').disabled = ready < 2;
+    $('#wait-hint').textContent = ready < 2 ? 'Condividi il codice: servono almeno 2 giocatori.'
+      : isHost ? `${ready} giocatori pronti!` : 'In attesa che l\'host avvii la partita…';
+  }
+  $('#btn-share').onclick = async () => {
+    const url = `${location.origin}${location.pathname}?r=${state.code}`;
+    try {
+      if (navigator.share) await navigator.share({ title: 'Soveratopoly', text: `Gioca con me a Soveratopoly! Codice ${state.code}`, url });
+      else { await navigator.clipboard.writeText(url); toast('Link copiato! 📋'); }
+    } catch { /* condivisione annullata */ }
+  };
+  $('#btn-start').onclick = () => send('game:start');
+  $('#btn-rematch').onclick = () => send('game:start');
+
+  async function leave() {
+    await send('room:leave', {}, { quiet: true }); // se la stanza non c'è più va bene lo stesso
+    backToLobby();
+  }
+  $('#btn-leave-wait').onclick = leave;
+  $('#btn-victory-exit').onclick = leave;
+  $('#btn-leave-game').onclick = () => {
+    const me = pl(meId());
+    if (state.phase === 'playing' && !me.bankrupt && !confirm('Vuoi abbandonare? Le tue proprietà torneranno libere.')) return;
+    leave();
+  };
+
+  // ------------------------------------------------------------------------
+  // Geometria del tabellone (percentuali sull'immagine)
+  // ------------------------------------------------------------------------
+  function cellRect(i) {
+    const box = (x0, y0, x1, y1, side) => ({ x0, y0, x1, y1, side });
+    const k = i % 10;
+    if (k === 0) { // angoli: VIA!, prigione, parcheggio, "In Prigione!"
+      const [x, y] = [[10, 10], [0, 10], [0, 0], [10, 0]][i / 10];
+      return box(BD[x], BD[y], BD[x + 1], BD[y + 1], 'corner');
+    }
+    if (i < 10) return box(BD[10 - k], BD[10], BD[11 - k], BD[11], 'bottom');
+    if (i < 20) return box(BD[0], BD[10 - k], BD[1], BD[11 - k], 'left');
+    if (i < 30) return box(BD[k], BD[0], BD[k + 1], BD[1], 'top');
+    return box(BD[10], BD[k], BD[11], BD[k + 1], 'right');
+  }
+
+  /** Lato esterno di ogni fila di caselle: asse e verso. */
+  const OUTER_EDGE = { bottom: ['y', 1], top: ['y', -1], left: ['x', -1], right: ['x', 1] };
+  /** Striscia spessa t lungo il bordo esterno (verso il prezzo) o interno (fascia colorata) di una casella. */
+  function strip(r, t, outer, pad = 0) {
+    const [axis, dir] = OUTER_EDGE[r.side];
+    const s = { x0: r.x0 + pad, y0: r.y0 + pad, x1: r.x1 - pad, y1: r.y1 - pad };
+    if ((dir === 1) === outer) s[`${axis}0`] = s[`${axis}1`] - t;
+    else s[`${axis}1`] = s[`${axis}0`] + t;
+    return s;
+  }
+  const place = (el, r) => Object.assign(el.style, {
+    left: `${r.x0}%`, top: `${r.y0}%`, width: `${r.x1 - r.x0}%`, height: `${r.y1 - r.y0}%`,
+  });
+
+  /** Posizione (in %) della k-esima pedina su una casella. */
+  function pawnSpot(i, k, inJail) {
+    if (i === RULES.JAIL_CELL) {
+      if (inJail) return { x: 8.6 + (k % 3) * 2.6, y: 89.4 + Math.floor(k / 3) * 2.8 }; // dentro il riquadro arancione
+      return k < 3 ? { x: 3.3, y: 88 + k * 3.3 } : { x: 6 + (k - 3) * 3.3, y: 96.6 };   // lungo la fascia "Transito"
+    }
+    const r = cellRect(i);
+    const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+    const tall = r.side === 'bottom' || r.side === 'top'; // casella alta e stretta
+    const cols = tall ? 2 : 3;
+    const rows = tall ? 3 : 2;
+    const col = k % cols, row = Math.floor(k / cols) % rows;
+    return { x: cx + (col - (cols - 1) / 2) * 3.2, y: cy + (row - (rows - 1) / 2) * 3.2 };
+  }
+
+  // ---------- Livello caselle (cliccabili, proprietari, case) ----------
+  const cellEls = [];
+  function buildCells() {
+    if (cellEls.length) return;
+    const layer = $('#cells-layer');
+    const add = (cls) => { const el = document.createElement('div'); el.className = cls; layer.appendChild(el); return el; };
+    CELLS.forEach((cell, i) => {
+      const r = cellRect(i);
+      const hit = add('cell-hit');
+      place(hit, r);
+      hit.title = cell.name;
+      hit.onclick = () => showCellInfo(i);
+      cellEls[i] = { hit };
+      if (!S.isBuyable(i)) return;
+      // Il segno del proprietario va sul lato esterno (sopra il prezzo), le case sulla fascia colorata.
+      const mark = add('owner-mark hidden');
+      place(mark, strip(r, 2.4, true, 0.5));
+      const houses = add('houses');
+      place(houses, strip(r, 3, false));
+      if (OUTER_EDGE[r.side][0] === 'x') houses.style.flexDirection = 'column';
+      Object.assign(cellEls[i], { mark, houses });
+    });
+  }
+
+  function renderCells() {
+    cellEls.forEach(({ hit, mark, houses }, i) => {
+      hit.classList.toggle('highlight', state.turn?.pendingBuy === i);
+      const pr = state.props[i];
+      if (!pr) return;
+      const owner = pr.owner && pl(pr.owner);
+      hit.classList.toggle('mortgaged', pr.mortgaged);
+      mark.classList.toggle('hidden', !owner);
+      if (owner) mark.style.background = owner.color;
+      houses.innerHTML = pr.houses === RULES.MAX_HOUSES ? '<span class="hotel"></span>' : '<span class="house"></span>'.repeat(pr.houses);
+    });
+  }
+
+  // ---------- Pedine ----------
+  const pawnEls = {};
+  function layoutPawns(activeId = null) {
+    const layer = $('#pawns-layer');
+    const byCell = {};
+    for (const p of state.players) {
+      if (!pawnEls[p.id]) {
+        const el = document.createElement('div');
+        el.className = 'pawn';
+        el.textContent = Array.from(p.nickname)[0].toUpperCase(); // Array.from: non spezza le emoji
+        el.style.background = p.color;
+        layer.appendChild(el);
+        pawnEls[p.id] = el;
+      }
+      if (shown[p.id] === undefined) { shown[p.id] = p.pos; shownJail[p.id] = p.inJail; }
+      pawnEls[p.id].classList.toggle('hidden', p.bankrupt);
+      pawnEls[p.id].classList.toggle('active', p.id === activeId);
+      if (p.bankrupt) continue;
+      const key = `${shown[p.id]}${shownJail[p.id] ? 'j' : ''}`;
+      (byCell[key] = byCell[key] || []).push(p);
+    }
+    for (const list of Object.values(byCell)) {
+      list.forEach((p, k) => {
+        const spot = pawnSpot(shown[p.id], k, shownJail[p.id]);
+        pawnEls[p.id].style.left = `${spot.x}%`;
+        pawnEls[p.id].style.top = `${spot.y}%`;
+      });
+    }
+    // Pedine di giocatori non più presenti
+    for (const id of Object.keys(pawnEls)) {
+      if (!pl(id)) { pawnEls[id].remove(); delete pawnEls[id]; delete shown[id]; delete shownJail[id]; }
+    }
+  }
+
+  /** Fa ripartire un'animazione CSS e la rimuove dopo ms. */
+  function flash(el, cls, ms) {
+    el.classList.remove(cls);
+    void el.offsetWidth; // forza il reflow: l'animazione riparte da capo
+    el.classList.add(cls);
+    setTimeout(() => el.classList.remove(cls), ms);
+  }
+
+  // ---------- Dadi 3D ----------
+  const PIPS = { 1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] }; // posizioni su griglia 3x3
+  const FACE_ROT = { 1: [0, 0], 2: [-90, 0], 3: [0, -90], 4: [0, 90], 5: [90, 0], 6: [0, 180] };             // rotazione che porta la faccia davanti
+  const dice = [$('#die1'), $('#die2')];
+  let spins = 0;
+  for (const die of dice) {
+    die.innerHTML = Object.entries(PIPS).map(([n, pips]) => `<div class="face f${n}">${
+      pips.map((c) => `<span class="pip" style="grid-area:${Math.ceil(c / 3)}/${((c - 1) % 3) + 1}"></span>`).join('')}</div>`).join('');
+  }
+  function setDice(values) {
+    dice.forEach((die, k) => {
+      const [x, y] = FACE_ROT[values[k]];
+      die.style.transform = `rotateX(${x + spins * 720}deg) rotateY(${y + spins * 360}deg)`;
+    });
+  }
+  async function rollDice(values) {
+    $('#dice').style.opacity = 1;
+    dice.forEach((d) => d.classList.add('rolling'));
+    await sleep(550);
+    dice.forEach((d) => d.classList.remove('rolling'));
+    spins++; // giri in più: la transizione verso la nuova faccia è sempre visibile
+    setDice(values);
+    await sleep(950);
+  }
+
+  // ------------------------------------------------------------------------
+  // Animazioni inviate dal server (lo stato definitivo arriva subito dopo)
+  // ------------------------------------------------------------------------
+  const setBusy = (on) => $('#screen-game').classList.toggle('busy', on);
+
+  async function playAnim(steps) {
+    if (!state || state.phase === 'lobby') return;
+    // Scheda in background o animazioni arretrate: si salta direttamente allo stato finale.
+    if (document.hidden || waitingAnims > 0) return;
+    setBusy(true);
+    $('#actions').innerHTML = '';
+    try {
+      for (const step of steps) {
+        const pawn = pawnEls[step.playerId];
+        if (step.t === 'dice') await rollDice(step.dice);
+        else if (step.t === 'card') await showCard(step);
+        else if (!pawn) continue;
+        else if (step.t === 'move') {
+          shownJail[step.playerId] = false;
+          for (const pos of step.path) {
+            shown[step.playerId] = pos;
+            layoutPawns();
+            flash(pawn, 'hop', 180);
+            await sleep(190);
+          }
+          await sleep(150);
+        } else if (step.t === 'jump') {
+          shown[step.playerId] = step.to;
+          shownJail[step.playerId] = !!step.jail;
+          flash(pawn, 'jump', 600);
+          layoutPawns();
+          await sleep(650);
+        }
+      }
+    } finally {
+      setBusy(false); // anche in caso di errore i pulsanti tornano disponibili
+    }
+  }
+
+  function showCard(step) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(closeModal, 4000);
+      openModal(`
+        <div class="head ${step.deck}">${step.deck === 'chance' ? '❓' : '🎁'} ${esc(step.title)}</div>
+        <div class="text">${esc(step.text)}</div>
+        <p class="who">${esc(pl(step.playerId)?.nickname || '')}</p>
+        <button class="btn btn-big btn-blue" data-close>OK!</button>`, 'game-card', () => { clearTimeout(timer); resolve(); });
+    });
+  }
+
+  // ------------------------------------------------------------------------
+  // Render partita
+  // ------------------------------------------------------------------------
+  function renderGame(prev) {
+    buildCells();
+    $('#game-code').textContent = state.code;
+    // Allinea le pedine allo stato (dopo un'animazione sono già al posto giusto).
+    for (const p of state.players) {
+      if (pawnEls[p.id] && shown[p.id] !== p.pos) flash(pawnEls[p.id], 'jump', 600);
+      shown[p.id] = p.pos;
+      shownJail[p.id] = p.inJail;
+    }
+    $('#dice').style.opacity = state.lastDice ? 1 : 0;
+    if (state.lastDice) setDice(state.lastDice);
+    renderCells();
+    layoutPawns(state.turn?.playerId);
+    renderBanner();
+    renderActions();
+    renderPlayers(prev);
+    renderMyProps();
+    $('#log').innerHTML = state.log.map((text) => `<li>${esc(text)}</li>`).join('');
+  }
+
+  function renderBanner() {
+    const b = $('#turn-banner');
+    if (!state.turn) {
+      b.className = 'turn-banner';
+      b.style.background = '';
+      b.textContent = '🏁 Partita finita';
+      return;
+    }
+    const cur = pl(state.turn.playerId);
+    const mine = cur.id === meId();
+    b.className = `turn-banner${mine ? ' mine' : ''}`;
+    b.style.background = cur.color;
+    b.innerHTML = `<span>${mine ? '🎯 Tocca a TE!' : `Tocca a ${esc(cur.nickname)}`}</span>
+      <span class="timer" data-deadline="${state.turn.deadline}"></span>`;
+    tickTimers();
+  }
+  /** Aggiorna tutti i conti alla rovescia (turno e scambio). */
+  function tickTimers() {
+    const now = Date.now() + clockOffset;
+    document.querySelectorAll('[data-deadline]').forEach((el) => {
+      el.textContent = `⏱ ${Math.max(0, Math.ceil((el.dataset.deadline - now) / 1000))}s`;
+    });
+  }
+  setInterval(tickTimers, 250);
+
+  /**
+   * Pulsante d'azione: si disattiva al clic (niente doppi invii) e si riattiva se il
+   * server rifiuta. Se l'azione riesce, il nuovo stato ridisegna comunque il pannello.
+   */
+  function button(label, cls, action, disabled = false) {
+    const b = document.createElement('button');
+    b.className = `btn ${cls}`;
+    b.textContent = label;
+    b.disabled = disabled;
+    b.onclick = async () => {
+      b.disabled = true;
+      if (!(await action())) b.disabled = false;
+    };
+    return b;
+  }
+  function row(...children) {
+    const el = document.createElement('div');
+    el.className = 'row';
+    el.append(...children);
+    return el;
+  }
+
+  function renderActions() {
+    const box = $('#actions');
+    box.innerHTML = '';
+    if (!state.turn) return;
+    renderTradeBox(box);
+    const { phase, pendingBuy } = state.turn;
+    if (!isMyTurn()) {
+      const what = { roll: 'sta per tirare i dadi', buy: `decide se comprare ${CELLS[pendingBuy]?.name}`, end: 'sta gestendo le sue proprietà' }[phase];
+      box.insertAdjacentHTML('beforeend', `<div class="waiting">⏳ ${esc(pl(state.turn.playerId).nickname)} ${esc(what)}…</div>`);
+      return;
+    }
+    const me = pl(meId());
+    if (phase === 'roll' && me.inJail) {
+      box.append(row(
+        button('🎲 Tenta il doppio', 'btn-blue', () => send('game:roll')),
+        button(`🔓 Paga ${euro(RULES.JAIL_FINE)}`, 'btn-yellow', () => send('game:payJail'), me.money < RULES.JAIL_FINE),
+      ));
+    } else if (phase === 'roll') {
+      box.append(button('🎲 Tira i dadi', 'btn-big btn-pink', () => send('game:roll')));
+    } else if (phase === 'buy') {
+      const cell = CELLS[pendingBuy];
+      const card = document.createElement('div');
+      card.className = 'buy-card';
+      card.innerHTML = `<div class="band" style="background:${S.colorOf(pendingBuy)}"></div>
+        <div class="body"><div class="name">${esc(cell.name)}</div>
+        <div>Prezzo <b>${euro(cell.price)}</b> · hai ${euro(me.money)}</div></div>`;
+      card.querySelector('.body').append(row(
+        button('🛒 Compra', 'btn-green', () => send('game:buy'), me.money < cell.price),
+        button('Passa', 'btn-ghost', () => send('game:pass')),
+      ));
+      box.append(card);
+    } else {
+      box.append(button('✅ Fine turno', 'btn-big btn-blue', () => send('game:endTurn')));
+    }
+  }
+
+  // ---------- Scambi ----------
+  const chip = (i) => `<span class="chip" style="--c:${S.colorOf(i)}">${esc(CELLS[i].name)}</span>`;
+  /** Un lato dello scambio: proprietà e soldi. */
+  const offer = ({ props, money }) => (props.map(chip).join('') + (money ? `<span class="chip money">${euro(money)}</span>` : '')) || '<i>niente</i>';
+
+  /** Riquadro dello scambio in corso, mostrato in cima alle azioni. */
+  function renderTradeBox(box) {
+    const t = state.trade;
+    if (!t) return;
+    const from = pl(t.from), to = pl(t.to);
+    const el = document.createElement('div');
+    el.className = 'trade-card';
+    const sides = (giveLabel, getLabel, give, get) => `
+      <div><small>${giveLabel}</small><div class="chips">${offer(give)}</div></div>
+      <div><small>${getLabel}</small><div class="chips">${offer(get)}</div></div>`;
+    const timer = `<span class="timer" data-deadline="${t.expires}"></span>`;
+    if (t.to === meId()) {
+      el.innerHTML = `<b>🤝 ${esc(from.nickname)} ti propone uno scambio ${timer}</b>${sides('Tu ricevi', 'Tu dai', t.give, t.get)}`;
+      el.append(row(
+        button('✅ Accetta', 'btn-green', () => send('trade:respond', { accept: true })),
+        button('❌ Rifiuta', 'btn-pink', () => send('trade:respond', { accept: false })),
+      ));
+    } else if (t.from === meId()) {
+      el.innerHTML = `<b>🤝 In attesa della risposta di ${esc(to.nickname)}… ${timer}</b>${sides('Tu dai', 'Tu ricevi', t.give, t.get)}`;
+      el.append(button('Annulla scambio', 'btn-ghost', () => send('trade:cancel')));
+    } else {
+      el.innerHTML = `<b>🤝 ${esc(from.nickname)} propone uno scambio a ${esc(to.nickname)}…</b>`;
+    }
+    box.append(el);
+  }
+
+  function openTrade(otherId) {
+    const other = pl(otherId), me = pl(meId());
+    const column = (title, who, name) => {
+      const checks = propsOf(who.id).map((i) => {
+        const locked = groupHasHouses(i);
+        return `<label class="tcheck${locked ? ' off' : ''}"><input type="checkbox" name="${name}" value="${i}"${locked ? ' disabled' : ''}>
+          <span class="sw" style="background:${S.colorOf(i)}"></span>${esc(CELLS[i].name)}${state.props[i].mortgaged ? ' 🏦' : ''}</label>`;
+      }).join('') || '<i>nessuna proprietà</i>';
+      return `<div><h4>${title}</h4>${checks}
+        <label class="tmoney">💶 <input type="number" name="${name}-money" min="0" max="${who.money}" value="0" inputmode="numeric"></label></div>`;
+    };
+    openModal(`
+      <h2>🤝 Scambio con ${esc(other.nickname)}</h2>
+      <div class="trade-cols">${column('Tu dai', me, 'give')}${column('Ricevi', other, 'get')}</div>
+      <small class="who">Le proprietà con case nel gruppo non si possono scambiare.</small>
+      <button class="btn btn-big btn-green" id="t-send">Proponi scambio</button>
+      <button class="btn btn-ghost" data-close>Annulla</button>`, 'trade-modal');
+    const box = $('#modal-box');
+    const picked = (name) => [...box.querySelectorAll(`input[name=${name}]:checked`)].map((c) => Number(c.value));
+    const amount = (name) => Number(box.querySelector(`input[name=${name}-money]`).value) || 0;
+    $('#t-send').onclick = async () => {
+      const res = await send('trade:propose', {
+        to: other.id, giveProps: picked('give'), getProps: picked('get'), giveMoney: amount('give'), getMoney: amount('get'),
+      });
+      if (res) closeModal();
+    };
+  }
+
+  function renderPlayers(prev) {
+    const ul = $('#players');
+    const tradeOpen = canManage() && !state.trade;
+    ul.innerHTML = state.players.map((p) => `
+      <li data-id="${p.id}" class="${state.turn?.playerId === p.id ? 'current' : ''} ${p.bankrupt ? 'bankrupt' : ''}">
+        <span class="dot" style="background:${p.color}"></span>
+        <span class="name">${esc(p.nickname)}${p.id === meId() ? ' (tu)' : ''}
+          <span class="tag">${p.id === state.hostId ? '👑' : ''}${p.inJail ? ' 🔒' : ''}${p.connected ? '' : ' 📴'}${p.bankrupt ? ' ☠️' : ''}</span></span>
+        <span class="money">${euro(p.money)}</span>
+        ${tradeOpen && p.id !== meId() && !p.bankrupt ? `<button class="btn btn-yellow btn-small" data-trade="${p.id}" title="Proponi uno scambio">🤝</button>` : ''}
+      </li>`).join('');
+    ul.querySelectorAll('[data-trade]').forEach((b) => { b.onclick = () => openTrade(b.dataset.trade); });
+    // Variazione di soldi (+200, -50...) rispetto allo stato precedente della stessa partita
+    if (prev?.phase !== 'playing') return;
+    for (const p of state.players) {
+      const old = prev.players.find((q) => q.id === p.id);
+      const d = old ? p.money - old.money : 0;
+      if (!d) continue;
+      const span = document.createElement('span');
+      span.className = `delta ${d > 0 ? 'plus' : 'minus'}`;
+      span.textContent = `${d > 0 ? '+' : ''}${euro(d)}`;
+      ul.querySelector(`[data-id="${p.id}"]`).appendChild(span);
+    }
+  }
+
+  function renderMyProps() {
+    const box = $('#my-props');
+    const mine = propsOf(meId());
+    box.innerHTML = mine.length ? '' : '<div class="empty">Nessuna proprietà… ancora! 🏝️</div>';
+    const can = canManage();
+    const me = pl(meId());
+    for (const i of mine) {
+      const cell = CELLS[i];
+      const pr = state.props[i];
+      const fullGroup = cell.type === 'prop' && S.groupOf(i).every((c) => state.props[c].owner === me.id);
+      const info = pr.mortgaged ? 'ipotecata' : pr.houses === RULES.MAX_HOUSES ? '🏨 albergo' : pr.houses ? `🏠 × ${pr.houses}` : fullGroup ? 'gruppo completo!' : '';
+      const el = document.createElement('div');
+      el.className = `prop-row${pr.mortgaged ? ' mort' : ''}`;
+      el.innerHTML = `<span class="sw" style="background:${S.colorOf(i)}"></span>
+        <span class="pn">${esc(cell.name)}<small>${info}</small></span><span class="ops"></span>`;
+      el.querySelector('.pn').onclick = () => showCellInfo(i);
+      const op = (label, action, cls, title, affordable = true) => {
+        const b = button(label, cls, () => send('game:manage', { action, cell: i }), !can || !affordable);
+        b.title = title;
+        el.querySelector('.ops').append(b);
+      };
+      if (fullGroup && !pr.mortgaged && pr.houses < RULES.MAX_HOUSES) op('+🏠', 'build', 'btn-green', `Costruisci (${euro(S.houseCost(i))})`, me.money >= S.houseCost(i));
+      if (pr.houses > 0) op('−🏠', 'sell', 'btn-yellow', `Vendi casa (+${euro(S.houseSellValue(i))})`);
+      if (!pr.mortgaged && !groupHasHouses(i)) op('🏦', 'mortgage', 'btn-ghost', `Ipoteca (+${euro(S.mortgageValue(i))})`);
+      if (pr.mortgaged) op('✨', 'unmortgage', 'btn-blue', `Riscatta (-${euro(S.unmortgageCost(i))})`, me.money >= S.unmortgageCost(i));
+      box.append(el);
+    }
+  }
+
+  // ---------- Reazioni (emoji predefinite, niente testo libero) ----------
+  $('#reactions').innerHTML = REACTIONS.map((e, i) => `<button data-r="${i}" aria-label="Reazione ${e}">${e}</button>`).join('');
+  $('#reactions').onclick = (ev) => {
+    const b = ev.target.closest('button');
+    if (b) send('chat:react', { id: Number(b.dataset.r) });
+  };
+  function showReaction({ playerId, emoji }) {
+    const p = state && pl(playerId);
+    if (!p) return;
+    const el = document.createElement('div');
+    el.className = 'reaction-float';
+    el.style.left = `${30 + Math.random() * 40}%`;
+    el.innerHTML = `${esc(emoji)}<small style="color:${p.color}">${esc(p.nickname)}</small>`;
+    $('#reaction-layer').appendChild(el);
+    setTimeout(() => el.remove(), 2300);
+  }
+
+  // ---------- Info casella ----------
+  function showCellInfo(i) {
+    const cell = CELLS[i];
+    const pr = state?.props[i];
+    const owner = pr?.owner && pl(pr.owner);
+    const table = (rows) => `<table class="info-table">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>`;
+    let details = '';
+    if (cell.type === 'prop') {
+      details = table([
+        ['Affitto', euro(S.propRent(i, 0, false))],
+        ['Con tutto il gruppo', euro(S.propRent(i, 0, true))],
+        ...[1, 2, 3, 4].map((h) => [`Con ${h} ${h === 1 ? 'casa' : 'case'}`, euro(S.propRent(i, h))]),
+        ['Con albergo', euro(S.propRent(i, RULES.MAX_HOUSES))],
+        ['Costo di una casa', euro(S.houseCost(i))],
+        ['Ipoteca', euro(S.mortgageValue(i))],
+      ]);
+    } else if (cell.type === 'station') {
+      details = table([1, 2, 3, 4].map((n) => [`Con ${n} stazion${n === 1 ? 'e' : 'i'}`, euro(RULES.STATION_RENT[n])]));
+    } else if (cell.type === 'utility') {
+      details = table([['Con una', `dadi × ${RULES.UTILITY_MULT[1]}`], ['Con entrambe', `dadi × ${RULES.UTILITY_MULT[2]}`]]);
+    }
+    const desc = {
+      go: `Ogni volta che passi dal VIA! ritiri ${euro(RULES.GO_SALARY)}.`,
+      tax: `Paghi ${euro(cell.amount)} alla banca.`,
+      chance: 'Pesca una carta Imprevisti.',
+      chest: 'Pesca una carta Probabilità.',
+      jail: 'Se sei solo di passaggio non succede nulla.',
+      parking: 'Riposati, qui non succede niente. 😎',
+      gotojail: 'Vai dritto in prigione senza passare dal VIA!.',
+    }[cell.type];
+    openModal(`
+      <div class="info-band" style="background:${S.colorOf(i)}"></div>
+      <h2>${esc(cell.name)}</h2>
+      ${cell.price ? `<p>Prezzo <b>${euro(cell.price)}</b></p>` : ''}
+      ${desc ? `<p>${desc}</p>` : ''}
+      ${details}
+      ${pr ? `<p>${owner ? `Proprietario: <b style="color:${owner.color}">${esc(owner.nickname)}</b>` : 'Libera 🟢'}${pr.mortgaged ? ' · ipotecata' : ''}</p>` : ''}
+      <button class="btn btn-blue" data-close>Chiudi</button>`);
+  }
+
+  // ---------- Modale generica ----------
+  let onModalClose = null;
+  function fireModalClose() {
+    const f = onModalClose;
+    onModalClose = null;
+    if (f) f();
+  }
+  function openModal(html, cls = '', onClose = null) {
+    fireModalClose(); // la finestra precedente, se c'era, viene sostituita
+    const box = $('#modal-box');
+    box.className = `modal-box ${cls}`;
+    box.innerHTML = html;
+    onModalClose = onClose;
+    $('#modal').classList.add('show');
+  }
+  function closeModal() {
+    $('#modal').classList.remove('show');
+    fireModalClose();
+  }
+  $('#modal').addEventListener('click', (e) => {
+    if (e.target.id === 'modal' || e.target.closest('[data-close]')) closeModal();
+  });
+
+  // ---------- Vittoria ----------
+  function renderVictory() {
+    const ov = $('#victory');
+    const finished = state.phase === 'finished';
+    $('#btn-rematch').classList.toggle('hidden', state.hostId !== meId());
+    if (finished === ov.classList.contains('show')) return; // già nello stato giusto
+    ov.classList.toggle('show', finished);
+    if (!finished) return;
+    const w = state.winnerId && pl(state.winnerId);
+    $('#victory-title').textContent = !w ? 'Partita finita' : w.id === meId() ? 'Hai vinto! 🎉' : `${w.nickname} ha vinto!`;
+    $('#victory-sub').textContent = w ? `Il re di Soverato chiude con ${euro(w.money)} 🤑` : '';
+    confetti();
+  }
+
+  function confetti() {
+    const box = $('#confetti');
+    box.innerHTML = '';
+    const colors = ['#ff3b8d', '#2f80ff', '#ffd23f', '#22c55e', '#a855f7', '#ff9a50'];
+    for (let k = 0; k < 120; k++) {
+      const c = document.createElement('div');
+      c.className = 'confetto';
+      c.style.left = `${Math.random() * 100}%`;
+      c.style.background = colors[k % colors.length];
+      c.style.animationDuration = `${2.5 + Math.random() * 2.5}s`;
+      c.style.animationDelay = `${Math.random() * 1.5}s`;
+      box.appendChild(c);
+    }
+  }
+
+  // ---------- Toast ----------
+  let toastTimer;
+  function toast(text) {
+    const t = $('#toast');
+    t.textContent = text;
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2600);
+  }
+})();

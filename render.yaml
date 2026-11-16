@@ -1,0 +1,10 @@
+# Blueprint Render: un web service Node sul piano gratuito.
+services:
+  - type: web
+    name: soveratopoly
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true

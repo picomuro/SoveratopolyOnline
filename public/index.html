@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0ea5b7">
+  <title>Soveratopoly</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Overlay di connessione: il server Free di Render può essere in sospensione -->
+  <div id="wake" class="overlay show">
+    <div class="wake-box">
+      <div class="spinner">🎲</div>
+      <p id="wake-text">Sto svegliando il server, attendi qualche secondo…</p>
+      <small id="wake-sub"></small>
+    </div>
+  </div>
+
+  <!-- ===================== LOBBY ===================== -->
+  <section id="screen-lobby" class="screen">
+    <div class="lobby-card">
+      <h1 class="logo">SOVERATOPOLY</h1>
+      <p class="tagline">Compra Soverato, una piazza alla volta 🌊</p>
+
+      <label class="field">
+        <span>Il tuo nickname</span>
+        <input id="nick" maxlength="14" autocomplete="nickname" placeholder="Es. Marco">
+      </label>
+
+      <button id="btn-create" class="btn btn-big btn-pink">✨ Crea stanza</button>
+
+      <div class="divider"><span>oppure entra con un codice</span></div>
+      <div class="join-row">
+        <input id="code" maxlength="4" placeholder="ABCD" autocapitalize="characters" autocomplete="off">
+        <button id="btn-join" class="btn btn-blue">Entra</button>
+      </div>
+
+      <details class="rules">
+        <summary>📖 Come si gioca</summary>
+        <ul>
+          <li>Da 2 a 6 giocatori, ognuno parte con <b>1500 €</b> dal VIA!.</li>
+          <li>Tira i dadi e muoviti in senso orario. Passando dal VIA! ritiri <b>200 €</b>.</li>
+          <li>Arrivi su una proprietà libera? Puoi <b>comprarla</b>. Se è di un altro, paghi l'<b>affitto</b>.</li>
+          <li>Con tutto il gruppo di colore l'affitto raddoppia e puoi costruire <b>case</b> (fino all'albergo 🏨).</li>
+          <li>Stazioni (Passaggio a Livello, Autobus, Treni, Marcello): più ne hai, più incassi.</li>
+          <li>Raspa e Depuratore: l'affitto è dadi × 4, o × 10 se le hai entrambe.</li>
+          <li>Nel tuo turno puoi proporre <b>scambi</b> 🤝 agli altri giocatori per completare i gruppi.</li>
+          <li>Doppio = tiri ancora. Tre doppi di fila = prigione!</li>
+          <li>In prigione: paga 50 € oppure prova a fare un doppio (massimo 3 tentativi).</li>
+          <li>Senza soldi? Il gioco ipoteca e vende case per te. Se non basta, sei in bancarotta.</li>
+          <li><b>Vince l'ultimo che resta con dei soldi!</b> 🏆</li>
+        </ul>
+      </details>
+    </div>
+  </section>
+
+  <!-- ===================== SALA D'ATTESA ===================== -->
+  <section id="screen-wait" class="screen hidden">
+    <div class="lobby-card">
+      <h2>Stanza</h2>
+      <div id="wait-code" class="room-code">----</div>
+      <button id="btn-share" class="btn btn-blue">🔗 Condividi link</button>
+      <ul id="wait-players" class="wait-players"></ul>
+      <p id="wait-hint" class="hint"></p>
+      <button id="btn-start" class="btn btn-big btn-pink hidden">🚀 Avvia partita</button>
+      <button id="btn-leave-wait" class="btn btn-ghost">Esci</button>
+    </div>
+  </section>
+
+  <!-- ===================== PARTITA ===================== -->
+  <section id="screen-game" class="screen hidden">
+    <div class="game-layout">
+      <div class="board-wrap">
+        <div id="board" class="board">
+          <img src="img/board.jpg" alt="Tabellone Soveratopoly" draggable="false">
+          <div id="cells-layer"></div>
+          <div id="pawns-layer"></div>
+          <div id="dice" class="dice-area">
+            <div class="die" id="die1"></div>
+            <div class="die" id="die2"></div>
+          </div>
+          <div id="reaction-layer"></div>
+        </div>
+      </div>
+
+      <aside class="panel">
+        <div id="turn-banner" class="turn-banner"></div>
+        <div id="actions" class="actions"></div>
+
+        <div class="reactions" id="reactions"></div>
+
+        <div class="card-box">
+          <h3>Giocatori</h3>
+          <ul id="players" class="players"></ul>
+        </div>
+
+        <div class="card-box">
+          <h3>Le mie proprietà</h3>
+          <div id="my-props" class="my-props"></div>
+        </div>
+
+        <div class="card-box">
+          <h3>Cronaca</h3>
+          <ul id="log" class="log"></ul>
+        </div>
+
+        <div class="footer-row">
+          <span>Stanza <b id="game-code"></b></span>
+          <button id="btn-leave-game" class="btn btn-ghost btn-small">Abbandona</button>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- Finestra generica (info casella, carte, errori) -->
+  <div id="modal" class="overlay">
+    <div class="modal-box" id="modal-box"></div>
+  </div>
+
+  <!-- Vittoria -->
+  <div id="victory" class="overlay">
+    <div class="victory-box">
+      <div class="trophy">🏆</div>
+      <h2 id="victory-title"></h2>
+      <p id="victory-sub"></p>
+      <button id="btn-rematch" class="btn btn-big btn-pink">🔁 Rivincita</button>
+      <button id="btn-victory-exit" class="btn btn-ghost">Torna alla home</button>
+    </div>
+    <div id="confetti"></div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <!-- Socket.IO servito dallo stesso server: nessun indirizzo scritto a mano -->
+  <script src="socket.io/socket.io.js"></script>
+  <script src="board-data.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
