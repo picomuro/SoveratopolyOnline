@@ -81,6 +81,9 @@
     STATION_RENT: [0, 25, 50, 100, 200],  // per numero di "stazioni" possedute
     UTILITY_MULT: [0, 4, 10],             // dadi x 4 (una) o x 10 (entrambe)
     MAX_HOUSES: 5,
+    MAX_PLAYERS: 8,
+    AUCTION_MIN_STEP: 10,                 // rilancio minimo (e prima offerta) in un'asta
+    CHAT_MAX_LENGTH: 120,
   };
 
   // Reazioni della chat rapida: il client invia solo l'indice.

@@ -1,7 +1,7 @@
 # 🌊 Soveratopoly
 
 Gioco da tavolo multiplayer online, gratuito, da giocare nel browser (anche da telefono).
-Da 2 a 6 giocatori si sfidano a comprare Soverato: chi resta l'ultimo con dei soldi vince.
+Da 2 a 8 giocatori si sfidano a comprare Soverato: chi resta l'ultimo con dei soldi vince.
 
 ## Avvio in locale
 
@@ -29,7 +29,8 @@ render.yaml          Blueprint per Render
 
 - Ognuno parte con **1500 €** dal VIA!. Passando dal VIA! si ritirano **200 €**.
 - Si tirano 2 dadi e si avanza in senso orario.
-- **Proprietà libera**: puoi comprarla al prezzo indicato, oppure passare.
+- **Proprietà libera**: puoi comprarla al prezzo indicato, oppure rinunciare.
+- **Asta**: se rinunci (o scade il tempo), la proprietà va all'asta tra tutti i giocatori ancora in gioco, te compreso. Si parte da 10 € e si rilancia di almeno 10 €: ci sono 15 secondi per la prima offerta e 10 secondi dopo ogni rilancio. Chi si ritira non può rientrare. Vince l'offerta più alta; se nessuno offre, la proprietà resta libera.
 - **Proprietà di un altro**: paghi l'affitto.
   - Via (affitto base = 8% del prezzo): l'affitto raddoppia se il proprietario ha tutto il gruppo di colore. Con case e albergo vale ×4, ×11, ×28, ×36 e ×45.
   - Stazioni (Passaggio a Livello, Stazione degli Autobus, Stazione dei Treni, Marcello): 25, 50, 100 o 200 € in base a quante ne possiede il proprietario.
@@ -44,6 +45,7 @@ render.yaml          Blueprint per Render
 - **Debiti**: se non hai abbastanza soldi, il gioco ipoteca le tue proprietà e, se serve, vende le case in automatico. Se non basta sei in **bancarotta**: le tue proprietà vanno al creditore, o tornano libere se il debito era con la banca.
 - **Vince l'ultimo giocatore non in bancarotta.**
 - Ogni fase del turno ha un tempo massimo. Se scade (o il giocatore è disconnesso), il server tira i dadi, rinuncia all'acquisto o chiude il turno al posto suo. Scambi e gestione delle proprietà danno tempo extra, ma mai oltre tre volte la durata della fase.
+- **Chat**: in sala d'attesa e in partita si possono scrivere messaggi brevi (massimo 120 caratteri, uno ogni 1,5 secondi). I link vengono rimossi e le parolacce più comuni mascherate. Restano anche le reazioni con le emoji.
 - **Rivincita**: a fine partita l'host può avviarne un'altra. Partecipano solo i giocatori ancora connessi.
 
 ## Messaggi socket
@@ -59,6 +61,8 @@ render.yaml          Blueprint per Render
 | `game:manage {action: build\|sell\|mortgage\|unmortgage, cell}` | |
 | `trade:propose {to, giveProps, getProps, giveMoney, getMoney}` | |
 | `trade:respond {accept}`, `trade:cancel` | |
+| `auction:bid {amount}`, `auction:pass` | |
+| `chat:send {text}` | `chat:message {id, playerId, nickname, color, text}` |
 | `chat:react {id}` | |
 
 Ogni richiesta del client riceve una risposta `{ok, error?, message?}`. L'errore `ROOM_NOT_FOUND` indica che la stanza (o il proprio posto) non esiste più: il client torna alla home e propone di crearne una nuova.

@@ -34,8 +34,8 @@
   const meId = () => session?.playerId;
   const pl = (id) => state.players.find((p) => p.id === id);
   const isMyTurn = () => state?.phase === 'playing' && state.turn.playerId === meId();
-  /** Case, ipoteche e scambi: solo nel proprio turno, non mentre si decide un acquisto. */
-  const canManage = () => isMyTurn() && state.turn.phase !== 'buy';
+  /** Case, ipoteche e scambi: solo nel proprio turno, non durante un acquisto o un'asta. */
+  const canManage = () => isMyTurn() && ['roll', 'end'].includes(state.turn.phase);
   const propsOf = (id) => Object.keys(state.props).map(Number).filter((i) => state.props[i].owner === id);
   const groupHasHouses = (i) => S.groupOf(i).some((c) => state.props[c].houses > 0);
 
@@ -90,9 +90,10 @@
     });
   }
 
-  function rejoin() {
+  async function rejoin() {
     replaced = false;
-    return send('room:rejoin', { code: session.code, token: session.token });
+    const res = await send('room:rejoin', { code: session.code, token: session.token });
+    if (res) setChat(res.chat);
   }
 
   /** Crea una stanza o entra in una esistente. */
@@ -104,12 +105,14 @@
     entering = false;
     if (!res) return;
     setSession({ code: res.code, token: res.token, playerId: res.playerId });
+    setChat(res.chat);
     history.replaceState(null, '', `?r=${res.code}`);
   }
 
   function backToLobby() {
     clearSession();
     state = null;
+    setChat([]);
     history.replaceState(null, '', location.pathname);
     $('#victory').classList.remove('show');
     showScreen('lobby');
@@ -275,18 +278,18 @@
     left: `${r.x0}%`, top: `${r.y0}%`, width: `${r.x1 - r.x0}%`, height: `${r.y1 - r.y0}%`,
   });
 
-  /** Posizione (in %) della k-esima pedina su una casella. */
-  function pawnSpot(i, k, inJail) {
+  /** Posizione (in %) della k-esima di n pedine sulla stessa casella (fino a 8). */
+  function pawnSpot(i, k, n, inJail) {
     if (i === RULES.JAIL_CELL) {
-      if (inJail) return { x: 8.6 + (k % 3) * 2.6, y: 89.4 + Math.floor(k / 3) * 2.8 }; // dentro il riquadro arancione
-      return k < 3 ? { x: 3.3, y: 88 + k * 3.3 } : { x: 6 + (k - 3) * 3.3, y: 96.6 };   // lungo la fascia "Transito"
+      if (inJail) return { x: 8.6 + (k % 3) * 2.6, y: 89.4 + Math.floor(k / 3) * 2.8 };  // dentro il riquadro arancione
+      return k < 4 ? { x: 3.3, y: 86.6 + k * 3 } : { x: 6.3 + (k - 4) * 2.6, y: 96.6 };   // lungo la fascia "Transito"
     }
     const r = cellRect(i);
     const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
-    const tall = r.side === 'bottom' || r.side === 'top'; // casella alta e stretta
-    const cols = tall ? 2 : 3;
-    const rows = tall ? 3 : 2;
-    const col = k % cols, row = Math.floor(k / cols) % rows;
+    const tall = r.side === 'bottom' || r.side === 'top'; // casella alta e stretta: 2 colonne, altrimenti 4
+    const cols = Math.min(n, tall ? 2 : 4);
+    const rows = Math.ceil(n / cols);
+    const col = k % cols, row = Math.floor(k / cols);
     return { x: cx + (col - (cols - 1) / 2) * 3.2, y: cy + (row - (rows - 1) / 2) * 3.2 };
   }
 
@@ -316,7 +319,7 @@
 
   function renderCells() {
     cellEls.forEach(({ hit, mark, houses }, i) => {
-      hit.classList.toggle('highlight', state.turn?.pendingBuy === i);
+      hit.classList.toggle('highlight', state.turn?.pendingBuy === i || state.auction?.cell === i);
       const pr = state.props[i];
       if (!pr) return;
       const owner = pr.owner && pl(pr.owner);
@@ -350,7 +353,7 @@
     }
     for (const list of Object.values(byCell)) {
       list.forEach((p, k) => {
-        const spot = pawnSpot(shown[p.id], k, shownJail[p.id]);
+        const spot = pawnSpot(shown[p.id], k, list.length, shownJail[p.id]);
         pawnEls[p.id].style.left = `${spot.x}%`;
         pawnEls[p.id].style.top = `${spot.y}%`;
       });
@@ -476,10 +479,10 @@
       return;
     }
     const cur = pl(state.turn.playerId);
-    const mine = cur.id === meId();
+    const mine = cur.id === meId() && !state.auction;
     b.className = `turn-banner${mine ? ' mine' : ''}`;
-    b.style.background = cur.color;
-    b.innerHTML = `<span>${mine ? '🎯 Tocca a TE!' : `Tocca a ${esc(cur.nickname)}`}</span>
+    b.style.background = state.auction ? '' : cur.color;
+    b.innerHTML = `<span>${state.auction ? '🔨 Asta in corso!' : mine ? '🎯 Tocca a TE!' : `Tocca a ${esc(cur.nickname)}`}</span>
       <span class="timer" data-deadline="${state.turn.deadline}"></span>`;
     tickTimers();
   }
@@ -519,6 +522,7 @@
     box.innerHTML = '';
     if (!state.turn) return;
     renderTradeBox(box);
+    if (state.auction) return renderAuctionBox(box);
     const { phase, pendingBuy } = state.turn;
     if (!isMyTurn()) {
       const what = { roll: 'sta per tirare i dadi', buy: `decide se comprare ${CELLS[pendingBuy]?.name}`, end: 'sta gestendo le sue proprietà' }[phase];
@@ -548,6 +552,33 @@
     } else {
       box.append(button('✅ Fine turno', 'btn-big btn-blue', () => send('game:endTurn')));
     }
+  }
+
+  // ---------- Aste ----------
+  /** Riquadro dell'asta: lo vedono tutti; chi è ancora in gara può rilanciare o ritirarsi. */
+  function renderAuctionBox(box) {
+    const a = state.auction;
+    const me = pl(meId());
+    const leader = a.bidderId && pl(a.bidderId);
+    const winning = a.bidderId === me.id;
+    const out = me.bankrupt || a.passed.includes(me.id);
+    const card = document.createElement('div');
+    card.className = 'buy-card auction';
+    card.innerHTML = `<div class="band" style="background:${S.colorOf(a.cell)}"></div>
+      <div class="body"><div class="name">🔨 ${esc(CELLS[a.cell].name)}</div>
+      <div>${leader
+        ? `Offerta più alta: <b>${euro(a.bid)}</b> di <b style="color:${leader.color}">${esc(leader.nickname)}</b>`
+        : `Nessuna offerta: si parte da <b>${euro(RULES.AUCTION_MIN_STEP)}</b>`}</div>
+      <div class="who">Prezzo di listino ${euro(CELLS[a.cell].price)} · ${
+        winning ? 'stai vincendo tu! 🎉' : out ? 'sei fuori da questa asta' : `hai ${euro(me.money)}`}</div></div>`;
+    if (!winning && !out) {
+      const raises = [1, 5, 10].map((k) => a.bid + k * RULES.AUCTION_MIN_STEP); // rilanci rapidi: +10, +50, +100
+      card.querySelector('.body').append(
+        row(...raises.map((v) => button(euro(v), 'btn-green', () => send('auction:bid', { amount: v }), v > me.money))),
+        button('Mi ritiro', 'btn-ghost', () => send('auction:pass')),
+      );
+    }
+    box.append(card);
   }
 
   // ---------- Scambi ----------
@@ -663,7 +694,50 @@
     }
   }
 
-  // ---------- Reazioni (emoji predefinite, niente testo libero) ----------
+  // ---------- Chat ----------
+  // Lo stesso riquadro compare in sala d'attesa e in partita: [data-chat] li aggiorna entrambi.
+  const CHAT_KEEP = 50;
+  const chatBoxes = [...document.querySelectorAll('[data-chat]')];
+  let chat = [];
+
+  function setChat(messages) {
+    chat = messages.slice(-CHAT_KEEP);
+    for (const box of chatBoxes) {
+      const list = box.querySelector('.chat-list');
+      list.replaceChildren(...chat.map((m) => {
+        const li = document.createElement('li');
+        const who = document.createElement('b');
+        who.textContent = `${m.nickname}: `;
+        who.style.color = m.color;
+        li.append(who, m.text); // testo inserito come testo, mai come HTML
+        if (m.playerId === meId()) li.className = 'mine';
+        return li;
+      }));
+      if (!chat.length) list.innerHTML = '<li class="empty">Nessun messaggio: rompi il ghiaccio! 👋</li>';
+      list.scrollTop = list.scrollHeight;
+    }
+  }
+  /** La chat è sullo schermo in questo momento? (Su telefono può essere sotto il tabellone.) */
+  const chatOnScreen = () => chatBoxes.some((box) => {
+    const r = box.getBoundingClientRect();
+    return r.height > 0 && r.top < innerHeight && r.bottom > 0;
+  });
+  socket.on('chat:message', (m) => {
+    setChat([...chat, m]);
+    if (m.playerId !== meId() && !chatOnScreen()) toast(`💬 ${m.nickname}: ${m.text}`);
+  });
+  for (const box of chatBoxes) {
+    const input = box.querySelector('input');
+    input.maxLength = RULES.CHAT_MAX_LENGTH;
+    box.querySelector('form').onsubmit = async (e) => {
+      e.preventDefault();
+      const text = input.value.trim();
+      if (text && await send('chat:send', { text })) input.value = '';
+    };
+  }
+  setChat([]);
+
+  // ---------- Reazioni (emoji predefinite) ----------
   $('#reactions').innerHTML = REACTIONS.map((e, i) => `<button data-r="${i}" aria-label="Reazione ${e}">${e}</button>`).join('');
   $('#reactions').onclick = (ev) => {
     const b = ev.target.closest('button');

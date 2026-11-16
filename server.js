@@ -33,9 +33,9 @@ const io = new Server(server, { pingInterval: 20000, pingTimeout: 20000 });
 // ---------------------------------------------------------------------------
 // Costanti
 // ---------------------------------------------------------------------------
-const MAX_PLAYERS = 6;
+const { MAX_PLAYERS } = RULES;
 const MAX_ROOMS = 300;                  // protezione della memoria sul piano gratuito
-const PAWN_COLORS = ['#ff3b6b', '#2f80ff', '#22c55e', '#ffb000', '#a855f7', '#00c2c7'];
+const PAWN_COLORS = ['#ff3b6b', '#2f80ff', '#22c55e', '#ffb000', '#a855f7', '#00c2c7', '#92400e', '#334155'];
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ'; // niente I e O per evitare confusione
 const BOARD_SIZE = CELLS.length;
 const JAIL_MAX_TRIES = 3;
@@ -46,6 +46,10 @@ const TIMEOUTS = { roll: [60000, 15000], buy: [30000, 8000], end: [45000, 4000] 
 const TURN_LIMIT_FACTOR = 3;            // una fase può essere prorogata al massimo fino a 3 volte la sua durata
 const TRADE_MS = 45000;                 // tempo per rispondere a uno scambio
 const REACTION_COOLDOWN_MS = 800;
+const CHAT_COOLDOWN_MS = 1500;          // un messaggio ogni 1,5 s per giocatore
+const CHAT_HISTORY = 40;                // messaggi conservati per chi entra o rientra
+const AUCTION_START_MS = 15000;         // tempo per la prima offerta di un'asta
+const AUCTION_BID_MS = 10000;           // dopo ogni rilancio il tempo riparte da qui
 const HOST_GRACE_MS = 10000;            // l'host che ricarica la pagina non perde il ruolo
 const LOBBY_GHOST_MS = 60 * 1000;       // in sala d'attesa un disconnesso viene rimosso dopo 60 s
 const ROOM_EMPTY_MS = 5 * 60 * 1000;    // stanza eliminata dopo 5 min con tutti disconnessi
@@ -162,6 +166,9 @@ function createRoom() {
     winnerId: null,
     trade: null,    // { from, to, give: {props, money}, get: {props, money}, expires }
     tradeTimer: null,
+    auction: null,  // { cell, bid, bidderId, passed: [id] } mentre una proprietà è all'asta
+    chat: [],       // ultimi messaggi: { id, playerId, nickname, color, text }
+    chatSeq: 0,
     log: [],
     timer: null,
     lastActivity: Date.now(),
@@ -191,6 +198,7 @@ function addPlayer(room, nickname) {
     connected: false,
     disconnectedAt: null,
     lastReaction: 0,
+    lastChat: 0,
     ...freshStats(),
   };
   room.players.push(player);
@@ -229,6 +237,7 @@ function publicState(room) {
       pendingBuy: room.turn.pendingBuy, deadline: room.turn.deadline,
     },
     trade: room.trade,
+    auction: room.auction,
     lastDice: room.lastDice,
     winnerId: room.winnerId,
     log: room.log.slice(0, 40),
@@ -255,7 +264,7 @@ function attach(socket, room, player) {
   if (isCurrent(room, player)) setTimer(room, true); // chi rientra nel proprio turno riprende il tempo normale
   // Lo stato parte dopo la risposta (ack), così il client conosce già il proprio id.
   setImmediate(() => broadcast(room));
-  return { code: room.code, playerId: player.id, token: player.token };
+  return { code: room.code, playerId: player.id, token: player.token, chat: room.chat };
 }
 
 /** Scollega un socket dal suo giocatore: il posto resta riservato per il rientro. */
@@ -285,6 +294,7 @@ function startGame(room) {
   room.players = room.players.filter((p) => p.connected);
   fixHost(room);
   cancelTrade(room);
+  room.auction = null;
   room.phase = 'playing';
   room.winnerId = null;
   room.lastDice = null;
@@ -311,6 +321,7 @@ function startTurn(room) {
  * non supera mai il limite della fase: nessuno può allungare il turno all'infinito.
  */
 function setTimer(room, extend = false) {
+  if (room.auction) return; // durante un'asta vale solo il timer dell'asta
   clearTimeout(room.timer);
   if (room.phase !== 'playing' || !room.turn) return;
   const [online, offline] = TIMEOUTS[room.turn.phase];
@@ -334,6 +345,7 @@ function autoPlay(room) {
 
 function endTurn(room) {
   clearTimeout(room.timer);
+  room.auction = null;
   cancelTrade(room, '⌛ Scambio annullato: il turno è finito.');
   if (room.phase !== 'playing') return;
   const n = room.players.length;
@@ -583,6 +595,7 @@ function bankrupt(room, p, creditor) {
   }
   log(room, `☠️ ${p.nickname} è in bancarotta! ${creditor ? `Le sue proprietà vanno a ${creditor.nickname}.` : 'Le sue proprietà tornano libere.'}`);
   if (room.trade && [room.trade.from, room.trade.to].includes(p.id)) cancelTrade(room);
+  if (room.auction?.bidderId === p.id) Object.assign(room.auction, { bid: 0, bidderId: null }); // l'asta riparte da zero
   checkWinner(room);
 }
 
@@ -592,6 +605,7 @@ function checkWinner(room) {
   room.phase = 'finished';
   room.winnerId = left[0]?.id || null;
   room.turn = null;
+  room.auction = null;
   clearTimeout(room.timer);
   cancelTrade(room);
   if (left[0]) log(room, `🏆 ${left[0].nickname} vince Soveratopoly!`);
@@ -611,10 +625,67 @@ function doBuy(room, p) {
   finishAction(room);
 }
 
+/** Chi rinuncia all'acquisto manda la proprietà all'asta. */
 function doPass(room, p) {
-  log(room, `🙅 ${p.nickname} non compra ${CELLS[room.turn.pendingBuy].name}.`);
+  const i = room.turn.pendingBuy;
+  log(room, `🙅 ${p.nickname} non compra ${CELLS[i].name}: va all'asta!`);
   room.turn.pendingBuy = null;
-  finishAction(room);
+  room.turn.phase = 'auction';
+  room.auction = { cell: i, bid: 0, bidderId: null, passed: [] };
+  armAuction(room, AUCTION_START_MS);
+}
+
+// ---------------------------------------------------------------------------
+// Aste: partecipano tutti i giocatori ancora in gioco, compreso chi ha rinunciato.
+// Si rilancia liberamente; a ogni offerta il tempo riparte. Vince l'offerta più alta.
+// ---------------------------------------------------------------------------
+const auctionMinBid = (room) => room.auction.bid + RULES.AUCTION_MIN_STEP;
+
+/** true se nessun altro può ancora rilanciare (ritirato, disconnesso o senza soldi). */
+function auctionSettled(room) {
+  const a = room.auction;
+  const min = auctionMinBid(room);
+  return !alive(room).some((p) => p.id !== a.bidderId && p.connected && !a.passed.includes(p.id) && p.money >= min);
+}
+
+/** (Ri)avvia il conto alla rovescia dell'asta, oppure la chiude se nessuno può più offrire. */
+function armAuction(room, ms) {
+  clearTimeout(room.timer);
+  if (auctionSettled(room)) return endAuction(room);
+  room.turn.deadline = Date.now() + ms;
+  room.timer = setTimeout(() => {
+    if (rooms.get(room.code) !== room || !room.auction) return;
+    endAuction(room);
+    broadcast(room);
+  }, ms);
+}
+
+function endAuction(room) {
+  clearTimeout(room.timer);
+  const { cell, bid, bidderId } = room.auction;
+  room.auction = null;
+  const winner = bidderId && playerById(room, bidderId);
+  if (winner && !winner.bankrupt && winner.money >= bid) {
+    winner.money -= bid;
+    room.props[cell].owner = winner.id;
+    log(room, `🔨 Aggiudicata! ${winner.nickname} si prende ${CELLS[cell].name} per ${euro(bid)}.`);
+  } else {
+    log(room, `🔨 Asta deserta: ${CELLS[cell].name} resta libera.`);
+  }
+  finishAction(room); // il turno riprende da dove si era fermato
+}
+
+// ---------------------------------------------------------------------------
+// Chat: testo breve, ripulito e con limite di frequenza
+// ---------------------------------------------------------------------------
+const BAD_WORDS = /\b(cazz\w*|stronz\w*|vaffancul\w*|fancul\w*|minchi\w*|merd\w*|puttan\w*|troi[ae]|coglion\w*|bastard\w*|fott\w*|fuck\w*|shit\w*)\b/gi;
+
+/** Messaggio sicuro: una riga, lunghezza limitata, niente link, parolacce più comuni mascherate. */
+function cleanChat(raw) {
+  const oneLine = String(raw ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  return Array.from(oneLine).slice(0, RULES.CHAT_MAX_LENGTH).join('')
+    .replace(/(https?:\/\/|www\.)\S+/gi, '[link]')
+    .replace(BAD_WORDS, (w) => w[0] + '*'.repeat(w.length - 1));
 }
 
 function manage(room, p, action, cellIdx) {
@@ -850,7 +921,51 @@ io.on('connection', (socket) => {
     broadcast(room);
   });
 
-  // --- Chat rapida: solo reazioni predefinite -------------------------------
+  // --- Aste -----------------------------------------------------------------
+  /** Come ctx(), ma richiede un'asta in corso e un giocatore che può parteciparvi. */
+  const inAuction = () => {
+    const c = ctx();
+    if (!c.room.auction) fail('BAD', 'Nessuna asta in corso.');
+    if (c.player.bankrupt) fail('BAD', 'Sei fuori dalla partita.');
+    if (c.room.auction.passed.includes(c.player.id)) fail('BAD', 'Ti sei già ritirato da questa asta.');
+    return c;
+  };
+
+  on('auction:bid', ({ amount }) => {
+    const { room, player } = inAuction();
+    const a = room.auction;
+    const bid = Math.floor(Number(amount));
+    if (a.bidderId === player.id) fail('BAD', 'L\'offerta più alta è già tua.');
+    if (!Number.isFinite(bid) || bid < auctionMinBid(room)) fail('BAD', `L'offerta minima è ${euro(auctionMinBid(room))}.`);
+    if (bid > player.money) fail('NO_MONEY', 'Non hai abbastanza soldi.');
+    Object.assign(a, { bid, bidderId: player.id });
+    log(room, `💰 ${player.nickname} offre ${euro(bid)} per ${CELLS[a.cell].name}.`);
+    armAuction(room, AUCTION_BID_MS);
+    broadcast(room);
+  });
+
+  on('auction:pass', () => {
+    const { room, player } = inAuction();
+    if (room.auction.bidderId === player.id) fail('BAD', 'Hai l\'offerta più alta: non puoi ritirarti.');
+    room.auction.passed.push(player.id);
+    if (auctionSettled(room)) endAuction(room);
+    broadcast(room);
+  });
+
+  // --- Chat: messaggi di testo e reazioni predefinite -----------------------
+  on('chat:send', ({ text }) => {
+    const { room, player } = ctx();
+    const clean = cleanChat(text);
+    if (!clean) fail('BAD', 'Scrivi qualcosa prima di inviare.');
+    const now = Date.now();
+    if (now - player.lastChat < CHAT_COOLDOWN_MS) fail('RATE_LIMIT', 'Piano con i messaggi! 😅');
+    player.lastChat = now;
+    const message = { id: ++room.chatSeq, playerId: player.id, nickname: player.nickname, color: player.color, text: clean };
+    room.chat.push(message);
+    if (room.chat.length > CHAT_HISTORY) room.chat.shift();
+    io.to(room.code).emit('chat:message', message);
+  });
+
   on('chat:react', ({ id }) => {
     const { room, player } = ctx();
     const emoji = REACTIONS[Number(id)];

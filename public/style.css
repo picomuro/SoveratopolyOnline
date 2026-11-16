@@ -156,6 +156,7 @@ input:focus { border-color: var(--blue); }
   background: #fff; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); animation: pop .35s cubic-bezier(.2,1.6,.4,1);
 }
 .buy-card .band { height: 14px; }
+.buy-card.auction { animation: none; } /* si ridisegna a ogni rilancio: niente effetto di comparsa */
 .buy-card .body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .buy-card .name { font-size: 1.25rem; font-weight: 700; }
 .waiting { background: rgba(255,255,255,.85); border-radius: var(--radius); padding: 12px 14px; text-align: center; color: var(--muted); }
@@ -198,6 +199,19 @@ input:focus { border-color: var(--blue); }
 .busy #players button, .busy #my-props button { pointer-events: none; opacity: .5; }
 
 .footer-row { display: flex; justify-content: space-between; align-items: center; color: #fff; padding: 0 4px; }
+
+/* ---------- Chat ---------- */
+.chat { display: flex; flex-direction: column; gap: 8px; }
+.chat-list {
+  list-style: none; margin: 0; padding: 0; max-height: 150px; overflow: auto;
+  display: grid; gap: 4px; font-size: .95rem; text-align: left; overflow-wrap: anywhere;
+}
+.chat-list li { padding: 4px 8px; border-radius: 10px; background: #f4f3ff; }
+.chat-list li.mine { background: #e3f4ff; }
+.chat-list li.empty { background: none; color: var(--muted); text-align: center; }
+.chat-form { display: flex; gap: 8px; }
+.chat-form input { padding: 10px 12px; font-size: 1rem; min-width: 0; }
+.chat-form .btn { flex: none; padding: 10px 14px; }
 
 /* ---------- Scambi ---------- */
 .trade-card {
