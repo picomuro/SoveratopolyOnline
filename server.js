@@ -60,42 +60,65 @@ const ROOM_EMPTY_MS = 5 * 60 * 1000;    // stanza eliminata dopo 5 min con tutti
 const ROOM_IDLE_MS = 30 * 60 * 1000;    // ...o dopo 30 min senza attività
 const CLEANUP_EVERY_MS = 30 * 1000;
 
-// Carte: testi originali a tema Soverato.
+// Carte scritte dall'autore del gioco, in dialetto. "note" spiega l'effetto in italiano
+// (compare sotto il testo della carta); "copies" dice quante volte la carta è nel mazzo.
 const DECKS = {
   chance: {
     title: 'Imprevisti',
     cards: [
-      { text: 'Ti fermi a prendere un gelato sul Lungomare: vai al Lungomare.', kind: 'goto', to: 32 },
-      { text: 'Vai al VIA! e ritira 200 €.', kind: 'goto', to: 0 },
-      { text: 'Passeggiata fino alla Torre di Carlo V: vai alla Torre.', kind: 'goto', to: 39 },
-      { text: 'Hai perso il passaggio: vai alla stazione più vicina.', kind: 'station' },
-      { text: 'Motorino in doppia fila: multa di 30 €.', kind: 'money', value: -30 },
-      { text: 'Il motorino ti lascia a piedi: torna indietro di 3 caselle.', kind: 'back', value: 3 },
-      { text: 'Ti hanno beccato senza casco: vai dritto In Prigione!', kind: 'jail' },
-      { text: 'Vinci il torneo di beach volley: ritira 100 €.', kind: 'money', value: 100 },
-      { text: 'Offri le granite a tutti: paga 20 € a ogni giocatore.', kind: 'payEach', value: 20 },
-      { text: 'Lavori di manutenzione: paga 25 € per ogni casa e 100 € per ogni albergo.', kind: 'repairs', house: 25, hotel: 100 },
-      { text: 'Concerto in Piazza Roma: vai a Piazza Roma.', kind: 'goto', to: 24 },
-      { text: 'Ritrovi 50 € nella giacca dell\'estate scorsa.', kind: 'money', value: 50 },
-      { text: 'Sfida a Murra! Scegli un giocatore e sfidalo: chi perde dà 150 € a chi vince.', kind: 'murra', value: 150 },
-      { text: 'Aria di sfida al bar: scegli un giocatore e giocatevela a Murra. Chi perde dà 150 € a chi vince.', kind: 'murra', value: 150 },
+      { text: 'Jati alu Via.', note: 'Vai al VIA! e ritira 200 €.', kind: 'goto', to: 0 },
+      { text: 'Jati a Piazza Roma.', note: 'Vai a Piazza Roma. Se passi dal VIA! ritiri 200 €.', kind: 'goto', to: 24 },
+      { text: 'Jati ala Sisal.', note: 'Vai alla Sisal. Se passi dal VIA! ritiri 200 €.', kind: 'goto', to: 18 },
+      { text: 'Chi culu e merda, jati ala Torre e Carlo V.', note: 'Vai alla Torre di Carlo V.', kind: 'goto', to: 39 },
+      {
+        text: 'Jati a Raspa o alu Depuratore, chira cchiù vicina. Però si l\'ava ‘ncunu tirati i dadi e li pagati puru ppe deci.',
+        note: 'Vai al servizio più vicino (Raspa o Depuratore). Se è di un altro giocatore, tiri i dadi e paghi 10 volte il risultato.',
+        kind: 'nearest', type: 'utility',
+      },
+      {
+        text: 'Jati fino ala stazione cchiù vicina.',
+        note: 'Vai alla stazione più vicina. Se è di un altro giocatore, paghi il doppio dell\'affitto.',
+        kind: 'nearest', type: 'station', copies: 2,
+      },
+      { text: 'Jati alu Passaggio a livello.', note: 'Vai al Passaggio a Livello. Se passi dal VIA! ritiri 200 €.', kind: 'goto', to: 5 },
+      { text: 'Chi culu, trovasti $50 supa u lungomare.', note: 'Ritiri 50 €.', kind: 'money', value: 50 },
+      { text: 'Pijjasti nu bellu gratta vinci alu Bar Charlie, vinciati $150.', note: 'Ritiri 150 €.', kind: 'money', value: 150 },
+      {
+        text: 'Si boi u nesci da prigione a poi usara, sinnò ta stipi.',
+        note: 'Tieni questa carta: ti fa uscire di prigione senza pagare. Puoi anche cederla in uno scambio.',
+        kind: 'jailfree',
+      },
+      { text: 'Faciti 3 passi all\'ambersa.', note: 'Torni indietro di 3 caselle.', kind: 'back', value: 3 },
+      { text: 'Jati ala caserma e dommu passati do Via.', note: 'Vai in prigione, senza passare dal VIA!.', kind: 'jail' },
+      {
+        text: 'Pagati $25 pe ogni casa e $100 pe ogni albergo, ti piazza u costruisci ah?',
+        note: 'Paghi 25 € per ogni casa e 100 € per ogni albergo.', kind: 'repairs', house: 25, hotel: 100,
+      },
+      { text: 'Parcheggiasti supa i strisci cunnu, paga $20.', note: 'Paghi 20 €.', kind: 'money', value: -20 },
+      { text: 'Hai u paghi i debiti chi dassau Gidari, paga $50 a tutti.', note: 'Paghi 50 € a ogni giocatore.', kind: 'payEach', value: 50 },
+      // Le due sfide a Murra non sono nel documento delle carte: restano dal minigioco.
+      { text: 'Sfida a Murra!', note: 'Scegli un giocatore e sfidalo: chi perde dà 150 € a chi vince.', kind: 'murra', value: 150, copies: 2 },
     ],
   },
   chest: {
     title: 'Probabilità',
     cards: [
-      { text: 'Rimborso delle tasse: ritira 60 €.', kind: 'money', value: 60 },
-      { text: 'È il tuo compleanno! Ogni giocatore ti regala 10 €.', kind: 'collectEach', value: 10 },
-      { text: 'Visita dal dentista: paga 80 €.', kind: 'money', value: -80 },
-      { text: 'Vendi la tavola da surf usata: ritira 75 €.', kind: 'money', value: 75 },
-      { text: 'Vinci la gara di pizza: ritira 120 €.', kind: 'money', value: 120 },
-      { text: 'Hai dimenticato il biglietto del treno: paga 40 €.', kind: 'money', value: -40 },
-      { text: 'Vai al VIA! e ritira 200 €.', kind: 'goto', to: 0 },
-      { text: 'Peschi un pesce enorme dal molo e lo vendi: ritira 30 €.', kind: 'money', value: 30 },
-      { text: 'Ripetizioni di matematica: paga 50 €.', kind: 'money', value: -50 },
-      { text: 'Schiamazzi notturni: vai In Prigione!', kind: 'jail' },
-      { text: 'Eredità della zia di Soverato Superiore: ritira 150 €.', kind: 'money', value: 150 },
-      { text: 'Abbonamento in palestra: paga 60 €.', kind: 'money', value: -60 },
+      { text: 'Jati fino alu Via.', note: 'Vai al VIA! e ritira 200 €.', kind: 'goto', to: 0 },
+      { text: 'Nannata dissa u ti pijji u gelato. Ti dezza $200, ‘nculu.', note: 'Ritiri 200 €.', kind: 'money', value: 200 },
+      { text: 'Hai u paghi a visita e l\'ospedale, paga $50.', note: 'Paghi 50 €.', kind: 'money', value: -50 },
+      { text: 'Stasira fatigasti ala discoteca, ti facisti $60.', note: 'Ritiri 60 €.', kind: 'money', value: 60 },
+      {
+        text: 'Si boi u nesci da prigione a poi usara, sinnò ta stipi.',
+        note: 'Tieni questa carta: ti fa uscire di prigione senza pagare. Puoi anche cederla in uno scambio.',
+        kind: 'jailfree',
+      },
+      { text: 'Jati ala caserma.', note: 'Vai in prigione, senza passare dal VIA!.', kind: 'jail' },
+      { text: 'Facisti u PR alu Mama\'s, pijjati $100.', note: 'Ritiri 100 €.', kind: 'money', value: 100 },
+      { text: 'Facisti u tavulu alu Mama\'s sabato, paghi $25.', note: 'Paghi 25 €.', kind: 'money', value: -25, copies: 2 },
+      { text: 'Auguri po compleanno, fatti dara $10 da busta.', note: 'Ogni giocatore ti dà 10 €.', kind: 'collectEach', value: 10 },
+      { text: 'Chi culu e merda, trovasti $100 supa u corsu.', note: 'Ritiri 100 €.', kind: 'money', value: 100 },
+      { text: 'Offristi nu burdellu e cocktail stasira, paga $100.', note: 'Paghi 100 €.', kind: 'money', value: -100, copies: 2 },
+      { text: 'Accattasti nu gratta e vinci ma perdisti cunnu, paga $20.', note: 'Paghi 20 €.', kind: 'money', value: -20, copies: 2 },
     ],
   },
 };
@@ -191,7 +214,8 @@ function deleteRoom(room) {
   rooms.delete(room.code);
 }
 
-const freshStats = () => ({ money: RULES.START_MONEY, pos: 0, inJail: false, jailTurns: 0, bankrupt: false });
+/** jailCards: carte "esci di prigione" in mano, ognuna col nome del mazzo da cui viene. */
+const freshStats = () => ({ money: RULES.START_MONEY, pos: 0, inJail: false, jailTurns: 0, bankrupt: false, jailCards: [] });
 
 function addPlayer(room, nickname) {
   if (room.players.length >= MAX_PLAYERS) fail('ROOM_FULL', `La stanza è piena (massimo ${MAX_PLAYERS} giocatori).`);
@@ -236,7 +260,7 @@ function publicState(room) {
     phase: room.phase,
     players: room.players.map((p) => ({
       id: p.id, nickname: p.nickname, color: p.color, money: p.money, pos: p.pos,
-      inJail: p.inJail, bankrupt: p.bankrupt, connected: p.connected,
+      inJail: p.inJail, bankrupt: p.bankrupt, connected: p.connected, jailCards: p.jailCards.length,
     })),
     props: room.props,
     turn: room.turn && {
@@ -313,8 +337,8 @@ function startGame(room) {
   room.lastDice = null;
   room.props = {};
   CELLS.forEach((_, i) => { if (B.isBuyable(i)) room.props[i] = { owner: null, houses: 0, mortgaged: false }; });
-  room.decks = { chance: shuffle(DECKS.chance.cards), chest: shuffle(DECKS.chest.cards) };
   room.players.forEach((p) => Object.assign(p, freshStats()));
+  room.decks = { chance: newDeck(room, 'chance'), chest: newDeck(room, 'chest') };
   room.turnIndex = crypto.randomInt(room.players.length);
   room.log = [];
   log(room, `🎲 La partita comincia! Ognuno parte con ${euro(RULES.START_MONEY)}.`);
@@ -460,8 +484,12 @@ function sendToJail(room, p, anim) {
   anim.push({ t: 'jump', playerId: p.id, to: RULES.JAIL_CELL, jail: true });
 }
 
-/** Effetto della casella su cui il giocatore è arrivato. */
-function land(room, p, anim, diceSum, cardDepth = 0) {
+/**
+ * Effetto della casella su cui il giocatore è arrivato.
+ * special (solo arrivando con una carta): { rentMult } moltiplica l'affitto,
+ * { rollForRent } fa tirare i dadi apposta e pagare quel multiplo del risultato.
+ */
+function land(room, p, anim, diceSum, cardDepth = 0, special = {}) {
   const cell = CELLS[p.pos];
   switch (cell.type) {
     case 'prop': case 'station': case 'utility': {
@@ -469,7 +497,15 @@ function land(room, p, anim, diceSum, cardDepth = 0) {
       if (!pr.owner) { room.turn.pendingBuy = p.pos; break; }
       if (pr.owner === p.id) break;
       if (pr.mortgaged) { log(room, `🏚️ ${cell.name} è ipotecata: niente affitto.`); break; }
-      pay(room, p, playerById(room, pr.owner), calcRent(room, p.pos, diceSum), `l'affitto di ${cell.name}`);
+      let rent = calcRent(room, p.pos, diceSum) * (special.rentMult || 1);
+      if (special.rollForRent) {
+        const d = [die(), die()];
+        room.lastDice = d;
+        anim.push({ t: 'dice', dice: d });
+        rent = (d[0] + d[1]) * special.rollForRent;
+        log(room, `🎲 ${p.nickname} tira ${d[0]} + ${d[1]} per l'affitto: paga ${special.rollForRent} volte il risultato.`);
+      }
+      pay(room, p, playerById(room, pr.owner), rent, `l'affitto di ${cell.name}`);
       break;
     }
     case 'tax':
@@ -497,15 +533,25 @@ function calcRent(room, i, diceSum) {
   return B.propRent(i, houses, fullGroup);
 }
 
+/** Mazzo mescolato. La carta "esci di prigione" resta fuori finché un giocatore la tiene in mano. */
+function newDeck(room, deckName) {
+  const held = room.players.some((p) => p.jailCards.includes(deckName));
+  const cards = DECKS[deckName].cards.flatMap((c) => Array(c.copies || 1).fill(c));
+  return shuffle(cards.filter((c) => c.kind !== 'jailfree' || !held));
+}
+
+/** Indici delle caselle di un certo tipo (stazioni, servizi). */
+const cellsOfType = (type) => CELLS.map((c, i) => (c.type === type ? i : -1)).filter((i) => i >= 0);
+
 function drawCard(room, p, deckName, anim, diceSum, cardDepth) {
-  const { title, cards } = DECKS[deckName];
-  if (!room.decks[deckName].length) room.decks[deckName] = shuffle(cards);
+  const { title } = DECKS[deckName];
+  if (!room.decks[deckName].length) room.decks[deckName] = newDeck(room, deckName);
   const card = room.decks[deckName].shift();
-  anim.push({ t: 'card', deck: deckName, title, text: card.text, playerId: p.id });
-  log(room, `🃏 ${p.nickname} pesca ${title}: "${card.text}"`);
+  anim.push({ t: 'card', deck: deckName, title, text: card.text, note: card.note, playerId: p.id });
+  log(room, `🃏 ${p.nickname} pesca ${title}: "${card.text}" (${card.note})`);
 
   const others = alive(room).filter((o) => o.id !== p.id);
-  const landAgain = () => land(room, p, anim, diceSum, cardDepth + 1);
+  const landAgain = (special) => land(room, p, anim, diceSum, cardDepth + 1, special);
   switch (card.kind) {
     case 'money':
       if (card.value >= 0) p.money += card.value;
@@ -515,12 +561,16 @@ function drawCard(room, p, deckName, anim, diceSum, cardDepth) {
       moveForward(room, p, (card.to - p.pos + BOARD_SIZE) % BOARD_SIZE, anim);
       landAgain();
       break;
-    case 'station': {
-      const target = B.STATIONS.find((s) => s > p.pos) ?? B.STATIONS[0];
+    case 'nearest': { // stazione o servizio più vicino, andando avanti
+      const cells = cellsOfType(card.type);
+      const target = cells.find((c) => c > p.pos) ?? cells[0];
       moveForward(room, p, (target - p.pos + BOARD_SIZE) % BOARD_SIZE, anim);
-      landAgain();
+      landAgain(card.type === 'station' ? { rentMult: 2 } : { rollForRent: 10 });
       break;
     }
+    case 'jailfree':
+      p.jailCards.push(deckName); // tornerà nel mazzo quando verrà usata
+      break;
     case 'back':
       moveBackward(p, card.value, anim);
       landAgain();
@@ -612,6 +662,8 @@ function bankrupt(room, p, creditor) {
       ? { owner: creditor.id, houses: 0 } // l'eventuale ipoteca resta
       : { owner: null, houses: 0, mortgaged: false });
   }
+  if (creditor) creditor.jailCards.push(...p.jailCards);
+  p.jailCards = []; // senza creditore tornano nei mazzi al prossimo rimescolamento
   log(room, `☠️ ${p.nickname} è in bancarotta! ${creditor ? `Le sue proprietà vanno a ${creditor.nickname}.` : 'Le sue proprietà tornano libere.'}`);
   if (room.trade && [room.trade.from, room.trade.to].includes(p.id)) cancelTrade(room);
   if (room.auction?.bidderId === p.id) Object.assign(room.auction, { bid: 0, bidderId: null }); // l'asta riparte da zero
@@ -814,16 +866,12 @@ function cancelMurra(room) {
 }
 
 // ---------------------------------------------------------------------------
-// Chat: testo breve, ripulito e con limite di frequenza
+// Chat: testo breve e con limite di frequenza. Il contenuto non viene filtrato né censurato.
 // ---------------------------------------------------------------------------
-const BAD_WORDS = /\b(cazz\w*|stronz\w*|vaffancul\w*|fancul\w*|minchi\w*|merd\w*|puttan\w*|troi[ae]|coglion\w*|bastard\w*|fott\w*|fuck\w*|shit\w*)\b/gi;
-
-/** Messaggio sicuro: una riga, lunghezza limitata, niente link, parolacce più comuni mascherate. */
+/** Riduce il messaggio a una sola riga di lunghezza limitata, senza toccarne le parole. */
 function cleanChat(raw) {
   const oneLine = String(raw ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
-  return Array.from(oneLine).slice(0, RULES.CHAT_MAX_LENGTH).join('')
-    .replace(/(https?:\/\/|www\.)\S+/gi, '[link]')
-    .replace(BAD_WORDS, (w) => w[0] + '*'.repeat(w.length - 1));
+  return Array.from(oneLine).slice(0, RULES.CHAT_MAX_LENGTH).join('');
 }
 
 function manage(room, p, action, cellIdx) {
@@ -888,6 +936,8 @@ function validateTrade(room, t) {
   };
   check(t.give.props, from);
   check(t.get.props, to);
+  if (from.jailCards.length < t.give.cards) fail('BAD', `${from.nickname} non ha più la carta "esci di prigione".`);
+  if (to.jailCards.length < t.get.cards) fail('BAD', `${to.nickname} non ha più la carta "esci di prigione".`);
   if (from.money < t.give.money) fail('NO_MONEY', `${from.nickname} non ha abbastanza soldi.`);
   if (to.money < t.get.money) fail('NO_MONEY', `${to.nickname} non ha abbastanza soldi.`);
   return [from, to];
@@ -1002,6 +1052,16 @@ io.on('connection', (socket) => {
     broadcast(room);
   });
 
+  on('game:useJailCard', () => {
+    const { room, player } = myTurn('roll');
+    if (!player.inJail) fail('BAD', 'Non sei in prigione.');
+    if (!player.jailCards.length) fail('BAD', 'Non hai la carta per uscire di prigione.');
+    player.jailCards.pop(); // la carta torna nel suo mazzo al prossimo rimescolamento
+    player.inJail = false; player.jailTurns = 0;
+    log(room, `🃏 ${player.nickname} usa la carta ed esce di prigione senza pagare.`);
+    broadcast(room);
+  });
+
   // Case e ipoteche: solo nel proprio turno, non mentre si decide un acquisto.
   on('game:manage', ({ action, cell }) => {
     const { room, player } = myTurn('roll', 'end');
@@ -1011,18 +1071,19 @@ io.on('connection', (socket) => {
   });
 
   // --- Scambi: si propongono solo nel proprio turno, uno alla volta ---------
-  on('trade:propose', ({ to, giveProps, getProps, giveMoney, getMoney }) => {
+  on('trade:propose', ({ to, giveProps, getProps, giveMoney, getMoney, giveCards, getCards }) => {
     const { room, player } = myTurn('roll', 'end');
     if (room.trade) fail('BAD', 'C\'è già uno scambio in corso.');
     const ids = (a) => [...new Set(Array.isArray(a) ? a.map(Number) : [])].filter(B.isBuyable);
     const money = (m) => { const n = Math.floor(Number(m)); return Number.isFinite(n) && n > 0 ? n : 0; };
     const trade = {
       from: player.id, to: String(to),
-      give: { props: ids(giveProps), money: money(giveMoney) },
-      get: { props: ids(getProps), money: money(getMoney) },
+      give: { props: ids(giveProps), money: money(giveMoney), cards: money(giveCards) },
+      get: { props: ids(getProps), money: money(getMoney), cards: money(getCards) },
       expires: Date.now() + TRADE_MS,
     };
-    if (!trade.give.props.length && !trade.get.props.length) fail('BAD', 'Lo scambio deve includere almeno una proprietà.');
+    const items = (side) => side.props.length + side.cards;
+    if (!items(trade.give) && !items(trade.get)) fail('BAD', 'Lo scambio deve includere almeno una proprietà o una carta.');
     const [, other] = validateTrade(room, trade);
     room.trade = trade;
     room.tradeTimer = setTimeout(() => {
@@ -1042,6 +1103,10 @@ io.on('connection', (socket) => {
       const [from, to] = validateTrade(room, t);
       for (const i of t.give.props) room.props[i].owner = to.id;
       for (const i of t.get.props) room.props[i].owner = from.id;
+      const given = from.jailCards.splice(0, t.give.cards);
+      const received = to.jailCards.splice(0, t.get.cards);
+      to.jailCards.push(...given);
+      from.jailCards.push(...received);
       const net = t.give.money - t.get.money; // soldi che passano da chi propone a chi accetta
       from.money -= net;
       to.money += net;

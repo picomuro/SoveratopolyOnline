@@ -291,7 +291,8 @@ input:focus { border-color: var(--blue); }
 .game-card .head { padding: 14px; color: #fff; font-weight: 700; font-size: 1.3rem; letter-spacing: 1px; }
 .game-card .head.chance { background: #ff8a1f; }
 .game-card .head.chest { background: #1fa3ff; }
-.game-card .text { padding: 18px 18px 6px; font-size: 1.15rem; }
+.game-card .text { padding: 18px 18px 0; font-size: 1.15rem; font-weight: 600; }
+.game-card .note { padding: 0 18px; color: var(--muted); font-size: .95rem; } /* l'effetto, in italiano */
 .game-card .btn { margin: 0 18px 18px; }
 
 .victory-box .trophy { font-size: 4.5rem; animation: bob 1s ease-in-out infinite; }

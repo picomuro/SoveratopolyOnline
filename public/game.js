@@ -439,10 +439,11 @@
 
   function showCard(step) {
     return new Promise((resolve) => {
-      const timer = setTimeout(closeModal, 4000);
+      const timer = setTimeout(closeModal, 7000);
       openModal(`
         <div class="head ${step.deck}">${step.deck === 'chance' ? '❓' : '🎁'} ${esc(step.title)}</div>
         <div class="text">${esc(step.text)}</div>
+        <div class="note">${esc(step.note || '')}</div>
         <p class="who">${esc(pl(step.playerId)?.nickname || '')}</p>
         <button class="btn btn-big btn-blue" data-close>OK!</button>`, 'game-card', () => { clearTimeout(timer); resolve(); });
     });
@@ -537,6 +538,7 @@
       box.append(row(
         button('🎲 Tenta il doppio', 'btn-blue', () => send('game:roll')),
         button(`🔓 Paga ${euro(RULES.JAIL_FINE)}`, 'btn-yellow', () => send('game:payJail'), me.money < RULES.JAIL_FINE),
+        ...(me.jailCards ? [button('🃏 Usa la carta', 'btn-green', () => send('game:useJailCard'))] : []),
       ));
     } else if (phase === 'roll') {
       box.append(button('🎲 Tira i dadi', 'btn-big btn-pink', () => send('game:roll')));
@@ -693,7 +695,9 @@
   // ---------- Scambi ----------
   const chip = (i) => `<span class="chip" style="--c:${S.colorOf(i)}">${esc(CELLS[i].name)}</span>`;
   /** Un lato dello scambio: proprietà e soldi. */
-  const offer = ({ props, money }) => (props.map(chip).join('') + (money ? `<span class="chip money">${euro(money)}</span>` : '')) || '<i>niente</i>';
+  const offer = ({ props, money, cards }) => (props.map(chip).join('')
+    + '<span class="chip">🃏 Esci di prigione</span>'.repeat(cards)
+    + (money ? `<span class="chip money">${euro(money)}</span>` : '')) || '<i>niente</i>';
 
   /** Riquadro dello scambio in corso, mostrato in cima alle azioni. */
   function renderTradeBox(box) {
@@ -729,7 +733,8 @@
         return `<label class="tcheck${locked ? ' off' : ''}"><input type="checkbox" name="${name}" value="${i}"${locked ? ' disabled' : ''}>
           <span class="sw" style="background:${S.colorOf(i)}"></span>${esc(CELLS[i].name)}${state.props[i].mortgaged ? ' 🏦' : ''}</label>`;
       }).join('') || '<i>nessuna proprietà</i>';
-      return `<div><h4>${title}</h4>${checks}
+      const cards = `<label class="tcheck"><input type="checkbox" name="${name}-card">🃏 Esci di prigione</label>`.repeat(who.jailCards);
+      return `<div><h4>${title}</h4>${checks}${cards}
         <label class="tmoney">💶 <input type="number" name="${name}-money" min="0" max="${who.money}" value="0" inputmode="numeric"></label></div>`;
     };
     openModal(`
@@ -741,9 +746,11 @@
     const box = $('#modal-box');
     const picked = (name) => [...box.querySelectorAll(`input[name=${name}]:checked`)].map((c) => Number(c.value));
     const amount = (name) => Number(box.querySelector(`input[name=${name}-money]`).value) || 0;
+    const cards = (name) => box.querySelectorAll(`input[name=${name}-card]:checked`).length;
     $('#t-send').onclick = async () => {
       const res = await send('trade:propose', {
         to: other.id, giveProps: picked('give'), getProps: picked('get'), giveMoney: amount('give'), getMoney: amount('get'),
+        giveCards: cards('give'), getCards: cards('get'),
       });
       if (res) closeModal();
     };
@@ -756,7 +763,7 @@
       <li data-id="${p.id}" class="${state.turn?.playerId === p.id ? 'current' : ''} ${p.bankrupt ? 'bankrupt' : ''}">
         <span class="dot" style="background:${p.color}"></span>
         <span class="name">${esc(p.nickname)}${p.id === meId() ? ' (tu)' : ''}
-          <span class="tag">${p.id === state.hostId ? '👑' : ''}${p.inJail ? ' 🔒' : ''}${p.connected ? '' : ' 📴'}${p.bankrupt ? ' ☠️' : ''}</span></span>
+          <span class="tag">${p.id === state.hostId ? '👑' : ''}${p.inJail ? ' 🔒' : ''}${p.connected ? '' : ' 📴'}${p.bankrupt ? ' ☠️' : ''}${p.jailCards ? ' 🃏' : ''}</span></span>
         <span class="money">${euro(p.money)}</span>
         ${tradeOpen && p.id !== meId() && !p.bankrupt ? `<button class="btn btn-yellow btn-small" data-trade="${p.id}" title="Proponi uno scambio">🤝</button>` : ''}
       </li>`).join('');
@@ -778,6 +785,8 @@
     const box = $('#my-props');
     const mine = propsOf(meId());
     box.innerHTML = mine.length ? '' : '<div class="empty">Nessuna proprietà… ancora! 🏝️</div>';
+    box.insertAdjacentHTML('beforeend', '<div class="prop-row"><span class="pn">🃏 Esci di prigione<small>carta da usare o scambiare</small></span></div>'
+      .repeat(pl(meId()).jailCards));
     const can = canManage();
     const me = pl(meId());
     for (const i of mine) {
