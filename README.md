@@ -45,6 +45,9 @@ render.yaml          Blueprint per Render
 - **Debiti**: se non hai abbastanza soldi, il gioco ipoteca le tue proprietà e, se serve, vende le case in automatico. Se non basta sei in **bancarotta**: le tue proprietà vanno al creditore, o tornano libere se il debito era con la banca.
 - **Vince l'ultimo giocatore non in bancarotta.**
 - Ogni fase del turno ha un tempo massimo. Se scade (o il giocatore è disconnesso), il server tira i dadi, rinuncia all'acquisto o chiude il turno al posto suo. Scambi e gestione delle proprietà danno tempo extra, ma mai oltre tre volte la durata della fase.
+- **Murra**: minigioco a due. Ognuno sceglie in segreto quante dita mostrare (da 1 a 5) e dichiara la somma delle due mani (da 2 a 10). Vince chi si avvicina di più alla somma; a pari distanza si rigioca (dopo 5 pareggi decide la sorte). Ci sono 20 secondi per giocare, poi il server sceglie a caso. Si gioca in due casi:
+  - **Asta rimasta a due**: quando resta un solo rivale in grado di rilanciare, può premere "Murra" invece di rilanciare e sfidare chi ha fatto l'offerta. Chi vince compra la proprietà a quel prezzo.
+  - **Imprevisti**: due carte fanno scegliere un giocatore da sfidare; chi perde dà 150 € a chi vince.
 - **Chat**: in sala d'attesa e in partita si possono scrivere messaggi brevi (massimo 120 caratteri, uno ogni 1,5 secondi). I link vengono rimossi e le parolacce più comuni mascherate. Restano anche le reazioni con le emoji.
 - **Rivincita**: a fine partita l'host può avviarne un'altra. Partecipano solo i giocatori ancora connessi.
 
@@ -53,7 +56,7 @@ render.yaml          Blueprint per Render
 | Client → Server | Server → Client |
 |---|---|
 | `room:create {nickname}` | `room:state` (stato completo, senza token) |
-| `room:join {code, nickname}` | `game:anim {steps}` (dadi, movimenti, carte da animare) |
+| `room:join {code, nickname}` | `game:anim {steps}` (dadi, movimenti, carte e mani di Murra da animare) |
 | `room:rejoin {code, token}` | `chat:reaction {playerId, emoji}` |
 | `room:leave` | `session:replaced` (la partita è stata aperta in un'altra scheda) |
 | `game:start`, `game:roll`, `game:payJail` | |
@@ -61,7 +64,8 @@ render.yaml          Blueprint per Render
 | `game:manage {action: build\|sell\|mortgage\|unmortgage, cell}` | |
 | `trade:propose {to, giveProps, getProps, giveMoney, getMoney}` | |
 | `trade:respond {accept}`, `trade:cancel` | |
-| `auction:bid {amount}`, `auction:pass` | |
+| `auction:bid {amount}`, `auction:pass`, `auction:murra` | |
+| `murra:choose {to}`, `murra:play {fingers, guess}` | |
 | `chat:send {text}` | `chat:message {id, playerId, nickname, color, text}` |
 | `chat:react {id}` | |
 

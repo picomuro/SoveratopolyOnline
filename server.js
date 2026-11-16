@@ -50,6 +50,10 @@ const CHAT_COOLDOWN_MS = 1500;          // un messaggio ogni 1,5 s per giocatore
 const CHAT_HISTORY = 40;                // messaggi conservati per chi entra o rientra
 const AUCTION_START_MS = 15000;         // tempo per la prima offerta di un'asta
 const AUCTION_BID_MS = 10000;           // dopo ogni rilancio il tempo riparte da qui
+const MURRA_CHOOSE_MS = 20000;          // tempo per scegliere chi sfidare a Murra
+const MURRA_PICK_MS = 20000;            // tempo per scegliere dita e somma
+const MURRA_MAX_ROUNDS = 5;             // dopo 5 pareggi di fila decide la sorte
+const MAX_FINGERS = B.FINGERS.length;
 const HOST_GRACE_MS = 10000;            // l'host che ricarica la pagina non perde il ruolo
 const LOBBY_GHOST_MS = 60 * 1000;       // in sala d'attesa un disconnesso viene rimosso dopo 60 s
 const ROOM_EMPTY_MS = 5 * 60 * 1000;    // stanza eliminata dopo 5 min con tutti disconnessi
@@ -73,6 +77,8 @@ const DECKS = {
       { text: 'Lavori di manutenzione: paga 25 € per ogni casa e 100 € per ogni albergo.', kind: 'repairs', house: 25, hotel: 100 },
       { text: 'Concerto in Piazza Roma: vai a Piazza Roma.', kind: 'goto', to: 24 },
       { text: 'Ritrovi 50 € nella giacca dell\'estate scorsa.', kind: 'money', value: 50 },
+      { text: 'Sfida a Murra! Scegli un giocatore e sfidalo: chi perde dà 150 € a chi vince.', kind: 'murra', value: 150 },
+      { text: 'Aria di sfida al bar: scegli un giocatore e giocatevela a Murra. Chi perde dà 150 € a chi vince.', kind: 'murra', value: 150 },
     ],
   },
   chest: {
@@ -167,6 +173,7 @@ function createRoom() {
     trade: null,    // { from, to, give: {props, money}, get: {props, money}, expires }
     tradeTimer: null,
     auction: null,  // { cell, bid, bidderId, passed: [id] } mentre una proprietà è all'asta
+    murra: null,    // { kind, stake, a, b, picks, round } durante una sfida a Murra
     chat: [],       // ultimi messaggi: { id, playerId, nickname, color, text }
     chatSeq: 0,
     log: [],
@@ -237,7 +244,12 @@ function publicState(room) {
       pendingBuy: room.turn.pendingBuy, deadline: room.turn.deadline,
     },
     trade: room.trade,
-    auction: room.auction,
+    auction: room.auction && { ...room.auction, challengerId: murraChallenger(room) },
+    // Le scelte restano segrete fino alla rivelazione: ai client arriva solo chi ha già giocato.
+    murra: room.murra && {
+      kind: room.murra.kind, stake: room.murra.stake, a: room.murra.a, b: room.murra.b,
+      round: room.murra.round, picked: Object.keys(room.murra.picks),
+    },
     lastDice: room.lastDice,
     winnerId: room.winnerId,
     log: room.log.slice(0, 40),
@@ -295,6 +307,7 @@ function startGame(room) {
   fixHost(room);
   cancelTrade(room);
   room.auction = null;
+  room.murra = null;
   room.phase = 'playing';
   room.winnerId = null;
   room.lastDice = null;
@@ -321,7 +334,7 @@ function startTurn(room) {
  * non supera mai il limite della fase: nessuno può allungare il turno all'infinito.
  */
 function setTimer(room, extend = false) {
-  if (room.auction) return; // durante un'asta vale solo il timer dell'asta
+  if (room.auction || room.murra) return; // aste e Murra hanno il proprio timer
   clearTimeout(room.timer);
   if (room.phase !== 'playing' || !room.turn) return;
   const [online, offline] = TIMEOUTS[room.turn.phase];
@@ -346,6 +359,7 @@ function autoPlay(room) {
 function endTurn(room) {
   clearTimeout(room.timer);
   room.auction = null;
+  room.murra = null;
   cancelTrade(room, '⌛ Scambio annullato: il turno è finito.');
   if (room.phase !== 'playing') return;
   const n = room.players.length;
@@ -362,6 +376,7 @@ function finishAction(room, anim = []) {
   if (room.phase !== 'playing') return;
   const p = current(room);
   if (p.bankrupt) return endTurn(room);
+  if (room.murra) return beginMurra(room); // una carta ha lanciato una sfida a Murra
   if (room.turn.pendingBuy !== null) room.turn.phase = 'buy';
   else if (room.turn.rollAgain && !p.inJail) {
     room.turn.phase = 'roll';
@@ -519,6 +534,10 @@ function drawCard(room, p, deckName, anim, diceSum, cardDepth) {
     case 'collectEach':
       for (const o of others) pay(room, o, p, card.value, 'il regalo');
       break;
+    case 'murra':
+      // La sfida parte a fine azione (vedi finishAction), dopo l'animazione della carta.
+      room.murra = newMurra('card', p.id, null, card.value);
+      break;
     case 'repairs': {
       const total = ownedBy(room, p.id).reduce((sum, i) => {
         const { houses } = room.props[i];
@@ -606,6 +625,7 @@ function checkWinner(room) {
   room.winnerId = left[0]?.id || null;
   room.turn = null;
   room.auction = null;
+  room.murra = null;
   clearTimeout(room.timer);
   cancelTrade(room);
   if (left[0]) log(room, `🏆 ${left[0].nickname} vince Soveratopoly!`);
@@ -641,11 +661,19 @@ function doPass(room, p) {
 // ---------------------------------------------------------------------------
 const auctionMinBid = (room) => room.auction.bid + RULES.AUCTION_MIN_STEP;
 
-/** true se nessun altro può ancora rilanciare (ritirato, disconnesso o senza soldi). */
-function auctionSettled(room) {
+/** Chi può ancora rilanciare contro l'offerta attuale (non ritirato, connesso, con abbastanza soldi). */
+function auctionRivals(room) {
   const a = room.auction;
   const min = auctionMinBid(room);
-  return !alive(room).some((p) => p.id !== a.bidderId && p.connected && !a.passed.includes(p.id) && p.money >= min);
+  return alive(room).filter((p) => p.id !== a.bidderId && p.connected && !a.passed.includes(p.id) && p.money >= min);
+}
+const auctionSettled = (room) => auctionRivals(room).length === 0;
+
+/** In un'asta rimasta a due, l'unico rivale può sfidare a Murra chi ha fatto l'offerta. Ritorna il suo id. */
+function murraChallenger(room) {
+  if (!room.auction?.bidderId || room.murra) return null;
+  const rivals = auctionRivals(room);
+  return rivals.length === 1 ? rivals[0].id : null;
 }
 
 /** (Ri)avvia il conto alla rovescia dell'asta, oppure la chiude se nessuno può più offrire. */
@@ -673,6 +701,116 @@ function endAuction(room) {
     log(room, `🔨 Asta deserta: ${CELLS[cell].name} resta libera.`);
   }
   finishAction(room); // il turno riprende da dove si era fermato
+}
+
+// ---------------------------------------------------------------------------
+// Murra: minigioco a due. Ognuno mostra da 1 a 5 dita e dichiara la somma (2-10).
+// Vince chi si avvicina di più alla somma; a pari distanza si rigioca.
+// Si gioca in due casi:
+//  - 'auction': in un'asta rimasta a due, il rivale sfida chi ha fatto l'offerta;
+//               chi vince compra la proprietà al prezzo offerto.
+//  - 'card':    carta Imprevisti; chi perde paga la posta a chi vince.
+// ---------------------------------------------------------------------------
+/** a = chi lancia la sfida, b = lo sfidato (null finché non viene scelto). */
+const newMurra = (kind, a, b, stake = 0) => ({ kind, stake, a, b, picks: {}, round: 1 });
+
+const randomMurraPick = () => {
+  const fingers = crypto.randomInt(1, MAX_FINGERS + 1);
+  return { fingers, guess: fingers + crypto.randomInt(1, MAX_FINGERS + 1) };
+};
+
+/** Mette il turno in fase "murra". Se c'è un solo avversario possibile, viene scelto in automatico. */
+function beginMurra(room) {
+  const m = room.murra;
+  room.turn.phase = 'murra';
+  const others = alive(room).filter((p) => p.id !== m.a);
+  if (!m.b && others.length === 1) return setMurraOpponent(room, others[0]);
+  armMurra(room);
+}
+
+function setMurraOpponent(room, opponent) {
+  const m = room.murra;
+  m.b = opponent.id;
+  log(room, `🤜 ${playerById(room, m.a).nickname} sfida ${opponent.nickname} a Murra: in palio ${euro(m.stake)}!`);
+  armMurra(room);
+}
+
+/** Avvia il conto alla rovescia della fase corrente della Murra (scelta dell'avversario o giocata). */
+function armMurra(room) {
+  clearTimeout(room.timer);
+  const m = room.murra;
+  if (m.b) {
+    // Chi è disconnesso gioca a caso, così la sfida non resta ferma.
+    for (const id of [m.a, m.b]) if (!m.picks[id] && !playerById(room, id).connected) m.picks[id] = randomMurraPick();
+    if (m.picks[m.a] && m.picks[m.b]) return resolveMurraRound(room);
+  }
+  const ms = m.b ? MURRA_PICK_MS : MURRA_CHOOSE_MS;
+  room.turn.deadline = Date.now() + ms;
+  room.timer = setTimeout(() => {
+    if (rooms.get(room.code) !== room || room.murra !== m) return;
+    murraTimeout(room);
+    broadcast(room);
+  }, ms);
+}
+
+/** Tempo scaduto: il server sceglie a caso al posto di chi non ha deciso. */
+function murraTimeout(room) {
+  const m = room.murra;
+  if (!m.b) {
+    const others = alive(room).filter((p) => p.id !== m.a);
+    return setMurraOpponent(room, others[crypto.randomInt(others.length)]);
+  }
+  for (const id of [m.a, m.b]) m.picks[id] ??= randomMurraPick();
+  resolveMurraRound(room);
+}
+
+/** Entrambi hanno giocato: rivela le mani e stabilisce chi vince la mano (o se si rigioca). */
+function resolveMurraRound(room) {
+  const m = room.murra;
+  const [pa, pb] = [m.picks[m.a], m.picks[m.b]];
+  const [na, nb] = [playerById(room, m.a).nickname, playerById(room, m.b).nickname];
+  const sum = pa.fingers + pb.fingers;
+  const [da, db] = [Math.abs(pa.guess - sum), Math.abs(pb.guess - sum)];
+  let winnerId = da < db ? m.a : db < da ? m.b : null;
+  const byLuck = !winnerId && m.round >= MURRA_MAX_ROUNDS;
+  if (byLuck) winnerId = crypto.randomInt(2) ? m.a : m.b;
+
+  io.to(room.code).emit('game:anim', {
+    steps: [{ t: 'murra', a: { id: m.a, ...pa }, b: { id: m.b, ...pb }, sum, winnerId, byLuck }],
+  });
+  log(room, `🤜 Murra: ${na} mostra ${pa.fingers} e dice ${pa.guess}, ${nb} mostra ${pb.fingers} e dice ${pb.guess}. Somma ${sum}: ${
+    !winnerId ? 'pari, si rigioca!' : byLuck ? 'ancora pari, decide la sorte.' : `vince ${winnerId === m.a ? na : nb}!`}`);
+
+  if (winnerId) return finishMurra(room, winnerId);
+  m.round++;
+  m.picks = {};
+  armMurra(room);
+}
+
+function finishMurra(room, winnerId) {
+  clearTimeout(room.timer);
+  const m = room.murra;
+  room.murra = null;
+  const winner = playerById(room, winnerId);
+  const loser = playerById(room, winnerId === m.a ? m.b : m.a);
+  if (m.kind === 'auction') {
+    // Chi vince la sfida si aggiudica l'asta al prezzo dell'offerta in corso.
+    log(room, `🏆 ${winner.nickname} vince la Murra contro ${loser.nickname}.`);
+    room.auction.bidderId = winner.id;
+    return endAuction(room);
+  }
+  log(room, `🏆 ${winner.nickname} vince la Murra contro ${loser.nickname}.`);
+  pay(room, loser, winner, m.stake, 'la Murra');
+  finishAction(room);
+}
+
+/** Un giocatore della sfida ha lasciato la partita: la Murra salta e il gioco riprende. */
+function cancelMurra(room) {
+  room.murra = null;
+  log(room, '🤜 Murra annullata.');
+  if (!room.auction) return finishAction(room);
+  room.turn.phase = 'auction';
+  armAuction(room, AUCTION_BID_MS);
 }
 
 // ---------------------------------------------------------------------------
@@ -833,6 +971,7 @@ io.on('connection', (socket) => {
       const wasCurrent = isCurrent(room, player);
       bankrupt(room, player, null);
       if (wasCurrent) endTurn(room);
+      else if (room.murra && [room.murra.a, room.murra.b].includes(player.id)) cancelMurra(room);
     }
     if (!connectedCount(room)) return deleteRoom(room);
     fixHost(room);
@@ -926,6 +1065,7 @@ io.on('connection', (socket) => {
   const inAuction = () => {
     const c = ctx();
     if (!c.room.auction) fail('BAD', 'Nessuna asta in corso.');
+    if (c.room.murra) fail('BAD', 'L\'asta è ferma: c\'è una Murra in corso.');
     if (c.player.bankrupt) fail('BAD', 'Sei fuori dalla partita.');
     if (c.room.auction.passed.includes(c.player.id)) fail('BAD', 'Ti sei già ritirato da questa asta.');
     return c;
@@ -949,6 +1089,49 @@ io.on('connection', (socket) => {
     if (room.auction.bidderId === player.id) fail('BAD', 'Hai l\'offerta più alta: non puoi ritirarti.');
     room.auction.passed.push(player.id);
     if (auctionSettled(room)) endAuction(room);
+    broadcast(room);
+  });
+
+  // Asta rimasta a due: invece di rilanciare, il rivale sfida a Murra chi ha fatto l'offerta.
+  on('auction:murra', () => {
+    const { room, player } = inAuction();
+    if (murraChallenger(room) !== player.id) {
+      fail('BAD', 'Puoi lanciare la Murra solo quando l\'asta è rimasta a due e l\'offerta più alta è dell\'altro.');
+    }
+    const { cell, bid, bidderId } = room.auction;
+    room.murra = newMurra('auction', player.id, bidderId);
+    log(room, `🤜 ${player.nickname} sfida ${playerById(room, bidderId).nickname} a Murra: chi vince compra ${CELLS[cell].name} a ${euro(bid)}!`);
+    beginMurra(room);
+    broadcast(room);
+  });
+
+  // --- Murra ----------------------------------------------------------------
+  const inMurra = () => {
+    const c = ctx();
+    if (!c.room.murra) fail('BAD', 'Nessuna Murra in corso.');
+    return { ...c, m: c.room.murra };
+  };
+
+  // Carta Imprevisti: chi l'ha pescata sceglie chi sfidare.
+  on('murra:choose', ({ to }) => {
+    const { room, player, m } = inMurra();
+    if (m.b || m.a !== player.id) fail('BAD', 'Non tocca a te scegliere.');
+    const opponent = playerById(room, String(to));
+    if (!opponent || opponent.bankrupt || opponent.id === player.id) fail('BAD', 'Scegli un giocatore ancora in gioco.');
+    setMurraOpponent(room, opponent);
+    broadcast(room);
+  });
+
+  // Giocata: quante dita mostro (1-5) e quale somma dichiaro (2-10).
+  on('murra:play', ({ fingers, guess }) => {
+    const { room, player, m } = inMurra();
+    if (!m.b || ![m.a, m.b].includes(player.id)) fail('BAD', 'Non stai giocando questa Murra.');
+    if (m.picks[player.id]) fail('BAD', 'Hai già giocato: aspetta l\'avversario.');
+    const [f, g] = [Number(fingers), Number(guess)];
+    if (!Number.isInteger(f) || f < 1 || f > MAX_FINGERS) fail('BAD', `Mostra da 1 a ${MAX_FINGERS} dita.`);
+    if (!Number.isInteger(g) || g < 2 || g > 2 * MAX_FINGERS) fail('BAD', `Dichiara una somma da 2 a ${2 * MAX_FINGERS}.`);
+    m.picks[player.id] = { fingers: f, guess: g };
+    if (m.picks[m.a] && m.picks[m.b]) resolveMurraRound(room);
     broadcast(room);
   });
 

@@ -156,7 +156,7 @@ input:focus { border-color: var(--blue); }
   background: #fff; border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); animation: pop .35s cubic-bezier(.2,1.6,.4,1);
 }
 .buy-card .band { height: 14px; }
-.buy-card.auction { animation: none; } /* si ridisegna a ogni rilancio: niente effetto di comparsa */
+.buy-card.auction, .buy-card.murra { animation: none; } /* si ridisegnano spesso: niente effetto di comparsa */
 .buy-card .body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
 .buy-card .name { font-size: 1.25rem; font-weight: 700; }
 .waiting { background: rgba(255,255,255,.85); border-radius: var(--radius); padding: 12px 14px; text-align: center; color: var(--muted); }
@@ -199,6 +199,34 @@ input:focus { border-color: var(--blue); }
 .busy #players button, .busy #my-props button { pointer-events: none; opacity: .5; }
 
 .footer-row { display: flex; justify-content: space-between; align-items: center; color: #fff; padding: 0 4px; }
+
+/* ---------- Murra ---------- */
+.murra .row { flex-wrap: wrap; }
+.murra .row .btn { flex: 1 1 30%; }
+.murra .name small { font-size: .9rem; color: var(--muted); font-weight: 500; }
+.versus { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.versus span { color: var(--muted); }
+.murra-controls { display: flex; flex-direction: column; gap: 8px; }
+.murra-controls small { color: var(--muted); font-weight: 600; }
+.murra-fingers, .murra-sums { display: grid; gap: 6px; }
+.murra-fingers { grid-template-columns: repeat(5, 1fr); }
+.murra-sums { grid-template-columns: repeat(9, 1fr); }
+.pick {
+  font: inherit; font-weight: 700; color: var(--ink); background: #fff; cursor: pointer;
+  border: 3px solid #e3e1f5; border-radius: 12px; padding: 6px 0;
+  display: flex; flex-direction: column; align-items: center; transition: transform .1s;
+}
+.pick span { font-size: 1.7rem; line-height: 1.2; }
+.pick.on { border-color: var(--pink); background: #ffe3ef; transform: scale(1.06); }
+.pick:disabled { opacity: .3; cursor: not-allowed; }
+.murra-reveal { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; }
+.murra-side { border-radius: 16px; padding: 10px 6px; background: #f4f3ff; border: 3px solid transparent; min-width: 0; overflow-wrap: anywhere; }
+.murra-side.win { animation: crown .3s .9s both; }
+.murra-hand { font-size: 3.4rem; line-height: 1.2; animation: shake .8s ease-in-out; }
+.murra-sum { display: flex; flex-direction: column; color: var(--muted); }
+.murra-sum b { font-size: 2.2rem; color: var(--ink); }
+.murra-sum b, .murra-outcome, .murra-side .said { animation: appear .3s .9s both; } /* la suspense: prima le mani, poi il risultato */
+.murra-outcome { font-size: 1.2rem; font-weight: 700; }
 
 /* ---------- Chat ---------- */
 .chat { display: flex; flex-direction: column; gap: 8px; }
@@ -284,6 +312,9 @@ input:focus { border-color: var(--blue); }
 .reaction-float small { display: block; font-size: 2.4cqw; font-weight: 700; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,.6); }
 
 /* ---------- Animazioni ---------- */
+@keyframes shake { 0%,100% { transform: none; } 20%,60% { transform: translateY(-14px) rotate(-12deg); } 40%,80% { transform: rotate(8deg); } }
+@keyframes appear { from { opacity: 0; } to { opacity: 1; } }
+@keyframes crown { to { border-color: var(--yellow); background: #fff4c2; } }
 @keyframes pop { from { transform: scale(.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.025); } }
 @keyframes spin { to { transform: rotate(360deg); } }

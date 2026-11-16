@@ -89,6 +89,10 @@
   // Reazioni della chat rapida: il client invia solo l'indice.
   const REACTIONS = ['👍', '😂', '😱', '🔥', '😭', '🎉', '😎', '🤑', '💸', '🙏', '👏', '🍦'];
 
+  // Murra: le dita che si possono mostrare (indice + 1 = numero di dita).
+  // Non esiste un'emoji con 4 dita esatte: accanto all'emoji compare sempre il numero.
+  const FINGERS = ['☝️', '✌️', '🤟', '🖖', '🖐️'];
+
   // Indici delle caselle per gruppo e delle stazioni, calcolati una volta sola.
   const byGroup = {};
   CELLS.forEach((c, i) => { if (c.group) (byGroup[c.group] = byGroup[c.group] || []).push(i); });
@@ -113,7 +117,7 @@
   const BOUNDS = [1.2, 14.74, 22.40, 30.37, 38.10, 45.89, 53.69, 61.52, 69.28, 77.28, 85.08, 98.45];
 
   const api = {
-    GROUPS, CELLS, RULES, REACTIONS, STATIONS, BOUNDS,
+    GROUPS, CELLS, RULES, REACTIONS, FINGERS, STATIONS, BOUNDS,
     euro, isBuyable, groupOf, colorOf, propRent, houseCost, houseSellValue, mortgageValue, unmortgageCost,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

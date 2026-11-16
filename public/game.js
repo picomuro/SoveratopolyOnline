@@ -4,7 +4,7 @@
  * e mostra lo stato che riceve, animando dadi e pedine.
  */
 (() => {
-  const { CELLS, RULES, BOUNDS: BD, REACTIONS, euro, ...S } = window.SOVERATO;
+  const { CELLS, RULES, BOUNDS: BD, REACTIONS, FINGERS, euro, ...S } = window.SOVERATO;
   const $ = (sel) => document.querySelector(sel);
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -413,6 +413,7 @@
         const pawn = pawnEls[step.playerId];
         if (step.t === 'dice') await rollDice(step.dice);
         else if (step.t === 'card') await showCard(step);
+        else if (step.t === 'murra') await showMurraReveal(step);
         else if (!pawn) continue;
         else if (step.t === 'move') {
           shownJail[step.playerId] = false;
@@ -479,10 +480,11 @@
       return;
     }
     const cur = pl(state.turn.playerId);
-    const mine = cur.id === meId() && !state.auction;
+    const special = state.murra ? '🤜 Murra!' : state.auction ? '🔨 Asta in corso!' : '';
+    const mine = cur.id === meId() && !special;
     b.className = `turn-banner${mine ? ' mine' : ''}`;
-    b.style.background = state.auction ? '' : cur.color;
-    b.innerHTML = `<span>${state.auction ? '🔨 Asta in corso!' : mine ? '🎯 Tocca a TE!' : `Tocca a ${esc(cur.nickname)}`}</span>
+    b.style.background = special ? '' : cur.color;
+    b.innerHTML = `<span>${special || (mine ? '🎯 Tocca a TE!' : `Tocca a ${esc(cur.nickname)}`)}</span>
       <span class="timer" data-deadline="${state.turn.deadline}"></span>`;
     tickTimers();
   }
@@ -522,6 +524,7 @@
     box.innerHTML = '';
     if (!state.turn) return;
     renderTradeBox(box);
+    if (state.murra) return renderMurraBox(box);
     if (state.auction) return renderAuctionBox(box);
     const { phase, pendingBuy } = state.turn;
     if (!isMyTurn()) {
@@ -570,15 +573,121 @@
         ? `Offerta più alta: <b>${euro(a.bid)}</b> di <b style="color:${leader.color}">${esc(leader.nickname)}</b>`
         : `Nessuna offerta: si parte da <b>${euro(RULES.AUCTION_MIN_STEP)}</b>`}</div>
       <div class="who">Prezzo di listino ${euro(CELLS[a.cell].price)} · ${
-        winning ? 'stai vincendo tu! 🎉' : out ? 'sei fuori da questa asta' : `hai ${euro(me.money)}`}</div></div>`;
+        winning ? `stai vincendo tu! 🎉${a.challengerId ? ' Ma può sfidarti a Murra…' : ''}` : out ? 'sei fuori da questa asta' : `hai ${euro(me.money)}`}</div></div>`;
     if (!winning && !out) {
       const raises = [1, 5, 10].map((k) => a.bid + k * RULES.AUCTION_MIN_STEP); // rilanci rapidi: +10, +50, +100
       card.querySelector('.body').append(
         row(...raises.map((v) => button(euro(v), 'btn-green', () => send('auction:bid', { amount: v }), v > me.money))),
+        // Asta rimasta a due: invece di rilanciare si può sfidare a Murra chi ha fatto l'offerta
+        ...(a.challengerId === me.id ? [button(`🤜 Murra! Se vinci la compri a ${euro(a.bid)}`, 'btn-pink', () => send('auction:murra'))] : []),
         button('Mi ritiro', 'btn-ghost', () => send('auction:pass')),
       );
     }
     box.append(card);
+  }
+
+  // ---------- Murra ----------
+  // Scelta in corso (dita e somma): sopravvive ai ridisegni del pannello e si azzera a ogni nuova mano.
+  let murraSel = { key: '', fingers: 0, guess: 0 };
+  /** Con n dita mie, la somma delle due mani può valere solo da n+1 a n+5. */
+  const sumPossible = (sum, fingers) => !fingers || (sum > fingers && sum <= fingers + FINGERS.length);
+
+  /** Riquadro della sfida: lo vedono tutti; i due sfidanti scelgono dita e somma. */
+  function renderMurraBox(box) {
+    const m = state.murra;
+    const me = pl(meId());
+    const a = pl(m.a), b = m.b && pl(m.b);
+    const prize = m.kind === 'card'
+      ? `Chi perde dà ${euro(m.stake)} a chi vince.`
+      : `Chi vince compra ${esc(CELLS[state.auction.cell].name)} a ${euro(state.auction.bid)}.`;
+    const card = document.createElement('div');
+    card.className = 'buy-card murra';
+    const body = document.createElement('div');
+    body.className = 'body';
+    card.append(body);
+    box.append(card);
+
+    if (!b) { // carta Imprevisti: prima si sceglie chi sfidare
+      body.innerHTML = `<div class="name">🤜 Murra!</div>
+        <div>${a.id === me.id ? 'Scegli chi sfidare:' : `${esc(a.nickname)} sta scegliendo chi sfidare…`}</div>
+        <div class="who">${prize}</div>`;
+      if (a.id !== me.id) return;
+      body.append(row(...state.players.filter((p) => !p.bankrupt && p.id !== me.id).map((p) => {
+        const btn = button(p.nickname, '', () => send('murra:choose', { to: p.id }));
+        btn.style.background = p.color;
+        return btn;
+      })));
+      return;
+    }
+
+    const mark = (p) => (m.picked.includes(p.id) ? '✅' : '⏳');
+    const playing = [a.id, b.id].includes(me.id);
+    body.innerHTML = `<div class="name">🤜 Murra!${m.round > 1 ? ` <small>mano ${m.round}</small>` : ''}</div>
+      <div class="versus"><b style="color:${a.color}">${esc(a.nickname)}</b> ${mark(a)} <span>contro</span> <b style="color:${b.color}">${esc(b.nickname)}</b> ${mark(b)}</div>
+      <div class="who">${prize}</div>`;
+    if (playing && !m.picked.includes(me.id)) body.append(murraControls(m));
+    else body.insertAdjacentHTML('beforeend', `<div class="who">${playing ? 'Hai giocato: in attesa dell\'avversario…' : 'Stanno scegliendo…'}</div>`);
+  }
+
+  /** Pulsanti per scegliere quante dita mostrare (1-5) e quale somma dichiarare (2-10). */
+  function murraControls(m) {
+    const key = `${m.a}:${m.b}:${m.round}`;
+    if (murraSel.key !== key) murraSel = { key, fingers: 0, guess: 0 };
+    const wrap = document.createElement('div');
+    wrap.className = 'murra-controls';
+    const pick = (html, on, onClick) => {
+      const btn = document.createElement('button');
+      btn.className = `pick${on ? ' on' : ''}`;
+      btn.innerHTML = html;
+      btn.onclick = onClick;
+      return btn;
+    };
+    const draw = () => {
+      wrap.innerHTML = '<small>1. Quante dita mostri?</small><div class="murra-fingers"></div>'
+        + '<small>2. Quanto fa la somma delle due mani?</small><div class="murra-sums"></div>';
+      FINGERS.forEach((emoji, k) => {
+        const n = k + 1;
+        const btn = pick(`<span>${emoji}</span>${n}`, murraSel.fingers === n, () => {
+          murraSel.fingers = n;
+          if (!sumPossible(murraSel.guess, n)) murraSel.guess = 0; // la somma scelta prima non è più possibile
+          draw();
+        });
+        btn.setAttribute('aria-label', `${n} ${n === 1 ? 'dito' : 'dita'}`);
+        wrap.querySelector('.murra-fingers').append(btn);
+      });
+      for (let sum = 2; sum <= 2 * FINGERS.length; sum++) {
+        const btn = pick(sum, murraSel.guess === sum, () => { murraSel.guess = sum; draw(); });
+        btn.disabled = !sumPossible(sum, murraSel.fingers);
+        wrap.querySelector('.murra-sums').append(btn);
+      }
+      wrap.append(button('🤜 Gioca!', 'btn-big btn-pink',
+        () => send('murra:play', { fingers: murraSel.fingers, guess: murraSel.guess }), !murraSel.fingers || !murraSel.guess));
+    };
+    draw();
+    return wrap;
+  }
+
+  /** Rivelazione di una mano: le due mani, le somme dichiarate e l'esito. */
+  function showMurraReveal(step) {
+    return new Promise((resolve) => {
+      const timer = setTimeout(closeModal, 5000);
+      const side = (s) => {
+        const p = pl(s.id);
+        return `<div class="murra-side${step.winnerId === s.id ? ' win' : ''}">
+          <b style="color:${p?.color}">${esc(p?.nickname || '')}</b>
+          <div class="murra-hand">${FINGERS[s.fingers - 1]}</div>
+          <div>${s.fingers} ${s.fingers === 1 ? 'dito' : 'dita'}</div>
+          <div class="said">dice <b>${s.guess}</b></div></div>`;
+      };
+      const w = step.winnerId && pl(step.winnerId);
+      const outcome = !w ? 'Pari: si rigioca! 🔁'
+        : step.byLuck ? `Ancora pari: la sorte premia ${esc(w.nickname)}! 🍀` : `Vince ${esc(w.nickname)}! 🏆`;
+      openModal(`
+        <h2>🤜 Murra! 🤛</h2>
+        <div class="murra-reveal">${side(step.a)}<div class="murra-sum">Somma<b>${step.sum}</b></div>${side(step.b)}</div>
+        <p class="murra-outcome">${outcome}</p>
+        <button class="btn btn-blue" data-close>OK!</button>`, 'murra-modal', () => { clearTimeout(timer); resolve(); });
+    });
   }
 
   // ---------- Scambi ----------
