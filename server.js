@@ -41,9 +41,9 @@ const BOARD_SIZE = CELLS.length;
 const JAIL_MAX_TRIES = 3;
 const MAX_DOUBLES = 3;
 
-// Durata di ogni fase del turno (ms): [giocatore connesso, giocatore disconnesso].
-const TIMEOUTS = { roll: [60000, 15000], buy: [30000, 8000], end: [45000, 4000] };
-const TURN_LIMIT_FACTOR = 3;            // una fase può essere prorogata al massimo fino a 3 volte la sua durata
+const MOVE_MS = 2 * 60 * 1000;          // tempo massimo per ogni mossa: tirare, decidere un acquisto, chiudere il turno
+// Se chi deve muovere è disconnesso, il server aspetta molto meno prima di giocare al posto suo.
+const OFFLINE_MOVE_MS = { roll: 15000, buy: 8000, end: 4000 };
 const TRADE_MS = 45000;                 // tempo per rispondere a uno scambio
 const REACTION_COOLDOWN_MS = 800;
 const CHAT_COOLDOWN_MS = 1500;          // un messaggio ogni 1,5 s per giocatore
@@ -353,18 +353,19 @@ function startTurn(room) {
 }
 
 /**
- * Avvia il timer della fase corrente: se scade, il server gioca al posto del giocatore.
- * Con extend=true (proroga, o cambio di connessione) la scadenza viene ricalcolata ma
- * non supera mai il limite della fase: nessuno può allungare il turno all'infinito.
+ * Avvia il timer della mossa corrente: se scade, il server gioca al posto del giocatore.
+ * Con extend=true la mossa è la stessa ma il giocatore si è scollegato o ricollegato:
+ * la scadenza viene ricalcolata, senza mai superare il tempo massimo contato dall'inizio
+ * della mossa. Gestire proprietà o scambi non dà tempo in più.
  */
 function setTimer(room, extend = false) {
   if (room.auction || room.murra) return; // aste e Murra hanno il proprio timer
   clearTimeout(room.timer);
   if (room.phase !== 'playing' || !room.turn) return;
-  const [online, offline] = TIMEOUTS[room.turn.phase];
   const now = Date.now();
-  if (!extend) room.turn.limit = now + online * TURN_LIMIT_FACTOR;
-  const ms = Math.max(0, Math.min(current(room).connected ? online : offline, room.turn.limit - now));
+  if (!extend) room.turn.limit = now + MOVE_MS;
+  const wait = current(room).connected ? MOVE_MS : OFFLINE_MOVE_MS[room.turn.phase];
+  const ms = Math.max(0, Math.min(wait, room.turn.limit - now));
   room.turn.deadline = now + ms;
   room.timer = setTimeout(() => autoPlay(room), ms);
 }
@@ -1066,7 +1067,6 @@ io.on('connection', (socket) => {
   on('game:manage', ({ action, cell }) => {
     const { room, player } = myTurn('roll', 'end');
     manage(room, player, action, cell);
-    setTimer(room, true); // un po' di tempo in più a chi sta gestendo
     broadcast(room);
   });
 
@@ -1091,7 +1091,6 @@ io.on('connection', (socket) => {
       broadcast(room);
     }, TRADE_MS);
     log(room, `🤝 ${player.nickname} propone uno scambio a ${other.nickname}.`);
-    setTimer(room, true); // tempo per attendere la risposta
     broadcast(room);
   });
 
@@ -1114,7 +1113,6 @@ io.on('connection', (socket) => {
     } else {
       cancelTrade(room, `🙅 ${player.nickname} rifiuta lo scambio.`);
     }
-    setTimer(room, true);
     broadcast(room);
   });
 

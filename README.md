@@ -44,7 +44,7 @@ render.yaml          Blueprint per Render
 - **Prigione**: ci finisci arrivando su "In Prigione!" o con una carta. Per uscire paghi 50 €, usi la carta "esci di prigione" oppure provi a fare un doppio (massimo 3 tentativi, poi paghi per forza).
 - **Debiti**: se non hai abbastanza soldi, il gioco ipoteca le tue proprietà e, se serve, vende le case in automatico. Se non basta sei in **bancarotta**: le tue proprietà vanno al creditore, o tornano libere se il debito era con la banca.
 - **Vince l'ultimo giocatore non in bancarotta.**
-- Ogni fase del turno ha un tempo massimo. Se scade (o il giocatore è disconnesso), il server tira i dadi, rinuncia all'acquisto o chiude il turno al posto suo. Scambi e gestione delle proprietà danno tempo extra, ma mai oltre tre volte la durata della fase.
+- Ogni mossa (tirare i dadi, decidere un acquisto, chiudere il turno) ha un tempo massimo di 2 minuti. Se scade, il server tira i dadi, rinuncia all'acquisto o chiude il turno al posto del giocatore; se il giocatore è disconnesso lo fa dopo pochi secondi. Aste e Murra hanno tempi propri, più brevi.
 - **Murra**: minigioco a due. Ognuno sceglie in segreto quante dita mostrare (da 1 a 5) e dichiara la somma delle due mani (da 2 a 10). Vince chi si avvicina di più alla somma; a pari distanza si rigioca (dopo 5 pareggi decide la sorte). Ci sono 20 secondi per giocare, poi il server sceglie a caso. Si gioca in due casi:
   - **Asta rimasta a due**: quando resta un solo rivale in grado di rilanciare, può premere "Murra" invece di rilanciare e sfidare chi ha fatto l'offerta. Chi vince compra la proprietà a quel prezzo.
   - **Imprevisti**: due carte fanno scegliere un giocatore da sfidare; chi perde dà 150 € a chi vince.
