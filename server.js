@@ -51,8 +51,10 @@ const CHAT_HISTORY = 40;                // messaggi conservati per chi entra o r
 const AUCTION_START_MS = 15000;         // tempo per la prima offerta di un'asta
 const AUCTION_BID_MS = 10000;           // dopo ogni rilancio il tempo riparte da qui
 const MURRA_CHOOSE_MS = 20000;          // tempo per scegliere chi sfidare a Murra
+const MURRA_OFFER_MS = 15000;           // tempo per accettare una sfida a Murra in un'asta
 const MURRA_PICK_MS = 20000;            // tempo per scegliere dita e somma
-const MURRA_MAX_ROUNDS = 5;             // dopo 5 pareggi di fila decide la sorte
+const MURRA_MAX_ROUNDS = 30;            // oltre 30 mani la sfida viene chiusa: vince chi è avanti
+const MURRA_MAX_IDLE = 2;               // ...e così dopo 2 mani in cui nessuno dei due ha giocato
 const MAX_FINGERS = B.FINGERS.length;
 const HOST_GRACE_MS = 10000;            // l'host che ricarica la pagina non perde il ruolo
 const LOBBY_GHOST_MS = 60 * 1000;       // in sala d'attesa un disconnesso viene rimosso dopo 60 s
@@ -272,6 +274,7 @@ function publicState(room) {
     // Le scelte restano segrete fino alla rivelazione: ai client arriva solo chi ha già giocato.
     murra: room.murra && {
       kind: room.murra.kind, stake: room.murra.stake, a: room.murra.a, b: room.murra.b,
+      stage: room.murra.stage, score: room.murra.score,
       round: room.murra.round, picked: Object.keys(room.murra.picks),
     },
     lastDice: room.lastDice,
@@ -520,7 +523,11 @@ function land(room, p, anim, diceSum, cardDepth = 0, special = {}) {
       log(room, `🚓 ${p.nickname} finisce In Prigione!`);
       sendToJail(room, p, anim);
       break;
-    default: break; // VIA!, prigione in transito, parcheggio: nessun effetto
+    case 'parking':
+      // A fine azione (vedi finishAction) chi è arrivato qui può sfidare un giocatore a Murra.
+      room.murra = newMurra('parking', p.id, null, RULES.PARKING_MURRA_STAKE);
+      break;
+    default: break; // VIA!, prigione in transito: nessun effetto
   }
 }
 
@@ -724,7 +731,7 @@ const auctionSettled = (room) => auctionRivals(room).length === 0;
 
 /** In un'asta rimasta a due, l'unico rivale può sfidare a Murra chi ha fatto l'offerta. Ritorna il suo id. */
 function murraChallenger(room) {
-  if (!room.auction?.bidderId || room.murra) return null;
+  if (!room.auction?.bidderId || room.auction.murraRefused || room.murra) return null;
   const rivals = auctionRivals(room);
   return rivals.length === 1 ? rivals[0].id : null;
 }
@@ -757,47 +764,71 @@ function endAuction(room) {
 }
 
 // ---------------------------------------------------------------------------
-// Murra: minigioco a due. Ognuno mostra da 1 a 5 dita e dichiara la somma (2-10).
-// Vince chi si avvicina di più alla somma; a pari distanza si rigioca.
-// Si gioca in due casi:
-//  - 'auction': in un'asta rimasta a due, il rivale sfida chi ha fatto l'offerta;
-//               chi vince compra la proprietà al prezzo offerto.
-//  - 'card':    carta Imprevisti; chi perde paga la posta a chi vince.
+// Murra: minigioco a due. A ogni mano ognuno mostra da 1 a 5 dita e dichiara la
+// somma delle due mani (2-10). Chi indovina la somma fa un punto (se indovinano
+// entrambi, o nessuno, il punto non viene assegnato). Vince chi arriva a 3 punti.
+// Si gioca in tre casi (kind):
+//  - 'auction': in un'asta rimasta a due, il rivale sfida chi ha fatto l'offerta.
+//               Lo sfidato può accettare o rifiutare; chi vince compra al prezzo offerto.
+//  - 'card':    carta Imprevisti: si sceglie un avversario, che non può rifiutare.
+//  - 'parking': chi arriva sul Parcheggio Gratuito può sfidare un giocatore (o rinunciare);
+//               lo sfidato non può rifiutare. In questi due casi chi perde paga la posta.
+// Fasi (stage): 'choose' = chi lancia sceglie l'avversario, 'offer' = lo sfidato decide
+// se accettare, 'play' = si giocano le mani.
 // ---------------------------------------------------------------------------
 /** a = chi lancia la sfida, b = lo sfidato (null finché non viene scelto). */
-const newMurra = (kind, a, b, stake = 0) => ({ kind, stake, a, b, picks: {}, round: 1 });
+const newMurra = (kind, a, b, stake = 0) => ({
+  kind, stake, a, b, stage: kind === 'auction' ? 'offer' : 'choose',
+  picks: {}, round: 1, score: {}, idle: 0,
+});
 
 const randomMurraPick = () => {
   const fingers = crypto.randomInt(1, MAX_FINGERS + 1);
   return { fingers, guess: fingers + crypto.randomInt(1, MAX_FINGERS + 1) };
 };
 
-/** Mette il turno in fase "murra". Se c'è un solo avversario possibile, viene scelto in automatico. */
+/** Mette il turno in fase "murra" e avvia la prima fase della sfida. */
 function beginMurra(room) {
   const m = room.murra;
   room.turn.phase = 'murra';
+  // Carta Imprevisti con un solo avversario possibile: la scelta è obbligata.
   const others = alive(room).filter((p) => p.id !== m.a);
-  if (!m.b && others.length === 1) return setMurraOpponent(room, others[0]);
+  if (m.kind === 'card' && others.length === 1) return setMurraOpponent(room, others[0]);
   armMurra(room);
 }
 
+/** Sfida da carta o da parcheggio: l'avversario scelto non può rifiutare. */
 function setMurraOpponent(room, opponent) {
   const m = room.murra;
   m.b = opponent.id;
-  log(room, `🤜 ${playerById(room, m.a).nickname} sfida ${opponent.nickname} a Murra: in palio ${euro(m.stake)}!`);
+  log(room, `🤜 ${playerById(room, m.a).nickname} sfida ${opponent.nickname} a Murra: chi perde dà ${euro(m.stake)} a chi vince!`);
+  startMurraPlay(room);
+}
+
+function startMurraPlay(room) {
+  const m = room.murra;
+  m.stage = 'play';
+  m.score = { [m.a]: 0, [m.b]: 0 };
   armMurra(room);
 }
 
-/** Avvia il conto alla rovescia della fase corrente della Murra (scelta dell'avversario o giocata). */
+/** Avvia il conto alla rovescia della fase corrente della Murra. */
 function armMurra(room) {
   clearTimeout(room.timer);
   const m = room.murra;
-  if (m.b) {
+  const connected = (id) => playerById(room, id).connected;
+  // Chi deve decidere ma è disconnesso non blocca la partita: vale come tempo scaduto.
+  if ((m.stage === 'offer' && !connected(m.b)) || (m.stage === 'choose' && !connected(m.a))) return murraTimeout(room);
+  if (m.stage === 'play') {
     // Chi è disconnesso gioca a caso, così la sfida non resta ferma.
-    for (const id of [m.a, m.b]) if (!m.picks[id] && !playerById(room, id).connected) m.picks[id] = randomMurraPick();
-    if (m.picks[m.a] && m.picks[m.b]) return resolveMurraRound(room);
+    const absent = [m.a, m.b].filter((id) => !m.picks[id] && !connected(id));
+    for (const id of absent) m.picks[id] = randomMurraPick();
+    if (m.picks[m.a] && m.picks[m.b]) {
+      if (absent.length === 2) m.idle++;
+      return resolveMurraRound(room);
+    }
   }
-  const ms = m.b ? MURRA_PICK_MS : MURRA_CHOOSE_MS;
+  const ms = { choose: MURRA_CHOOSE_MS, offer: MURRA_OFFER_MS, play: MURRA_PICK_MS }[m.stage];
   room.turn.deadline = Date.now() + ms;
   room.timer = setTimeout(() => {
     if (rooms.get(room.code) !== room || room.murra !== m) return;
@@ -806,53 +837,77 @@ function armMurra(room) {
   }, ms);
 }
 
-/** Tempo scaduto: il server sceglie a caso al posto di chi non ha deciso. */
+/** Tempo scaduto: il server decide al posto di chi non l'ha fatto. */
 function murraTimeout(room) {
   const m = room.murra;
-  if (!m.b) {
+  if (m.stage === 'offer') return refuseMurra(room);
+  if (m.stage === 'choose') {
+    if (m.kind === 'parking') return skipMurra(room); // sfida facoltativa: senza scelta non si gioca
     const others = alive(room).filter((p) => p.id !== m.a);
     return setMurraOpponent(room, others[crypto.randomInt(others.length)]);
   }
+  if (!Object.keys(m.picks).length) m.idle++; // nessuno dei due ha giocato
   for (const id of [m.a, m.b]) m.picks[id] ??= randomMurraPick();
   resolveMurraRound(room);
 }
 
-/** Entrambi hanno giocato: rivela le mani e stabilisce chi vince la mano (o se si rigioca). */
+/** Asta: lo sfidato rifiuta (o non risponde). L'asta riprende e la sfida non si può riproporre sulla stessa offerta. */
+function refuseMurra(room) {
+  const m = room.murra;
+  room.murra = null;
+  room.auction.murraRefused = true;
+  log(room, `🙅 ${playerById(room, m.b).nickname} rifiuta la sfida a Murra: l'asta continua.`);
+  room.turn.phase = 'auction';
+  armAuction(room, AUCTION_BID_MS);
+}
+
+/** Parcheggio Gratuito: chi poteva sfidare rinuncia. */
+function skipMurra(room) {
+  const m = room.murra;
+  room.murra = null;
+  log(room, `🅿️ ${playerById(room, m.a).nickname} non sfida nessuno.`);
+  finishAction(room);
+}
+
+/** Entrambi hanno giocato: rivela le mani, assegna l'eventuale punto e controlla se qualcuno ha vinto. */
 function resolveMurraRound(room) {
   const m = room.murra;
   const [pa, pb] = [m.picks[m.a], m.picks[m.b]];
   const [na, nb] = [playerById(room, m.a).nickname, playerById(room, m.b).nickname];
   const sum = pa.fingers + pb.fingers;
-  const [da, db] = [Math.abs(pa.guess - sum), Math.abs(pb.guess - sum)];
-  let winnerId = da < db ? m.a : db < da ? m.b : null;
-  const byLuck = !winnerId && m.round >= MURRA_MAX_ROUNDS;
-  if (byLuck) winnerId = crypto.randomInt(2) ? m.a : m.b;
+  const [hitA, hitB] = [pa.guess === sum, pb.guess === sum];
+  const scorerId = hitA === hitB ? null : hitA ? m.a : m.b; // entrambi o nessuno: niente punto
+  if (scorerId) m.score[scorerId]++;
+  const [sa, sb] = [m.score[m.a], m.score[m.b]];
+
+  let winnerId = sa >= RULES.MURRA_POINTS ? m.a : sb >= RULES.MURRA_POINTS ? m.b : null;
+  // Sfida troppo lunga, o giocatori assenti: vince chi è avanti; a pari punti decide la sorte.
+  const cutShort = !winnerId && (m.round >= MURRA_MAX_ROUNDS || m.idle >= MURRA_MAX_IDLE);
+  if (cutShort) winnerId = sa > sb ? m.a : sb > sa ? m.b : crypto.randomInt(2) ? m.a : m.b;
 
   io.to(room.code).emit('game:anim', {
-    steps: [{ t: 'murra', a: { id: m.a, ...pa }, b: { id: m.b, ...pb }, sum, winnerId, byLuck }],
+    steps: [{ t: 'murra', a: { id: m.a, ...pa }, b: { id: m.b, ...pb }, sum, scorerId, score: { ...m.score }, winnerId, cutShort }],
   });
   log(room, `🤜 Murra: ${na} mostra ${pa.fingers} e dice ${pa.guess}, ${nb} mostra ${pb.fingers} e dice ${pb.guess}. Somma ${sum}: ${
-    !winnerId ? 'pari, si rigioca!' : byLuck ? 'ancora pari, decide la sorte.' : `vince ${winnerId === m.a ? na : nb}!`}`);
+    scorerId ? `punto a ${scorerId === m.a ? na : nb}` : hitA ? 'indovinano entrambi, nessun punto' : 'nessun punto'} (${sa}-${sb}).`);
 
-  if (winnerId) return finishMurra(room, winnerId);
+  if (winnerId) return finishMurra(room, winnerId, cutShort);
   m.round++;
   m.picks = {};
   armMurra(room);
 }
 
-function finishMurra(room, winnerId) {
+function finishMurra(room, winnerId, cutShort = false) {
   clearTimeout(room.timer);
   const m = room.murra;
   room.murra = null;
   const winner = playerById(room, winnerId);
   const loser = playerById(room, winnerId === m.a ? m.b : m.a);
+  log(room, `🏆 ${winner.nickname} vince la Murra contro ${loser.nickname} ${m.score[winner.id]}-${m.score[loser.id]}${cutShort ? ' (sfida chiusa in anticipo)' : ''}.`);
   if (m.kind === 'auction') {
-    // Chi vince la sfida si aggiudica l'asta al prezzo dell'offerta in corso.
-    log(room, `🏆 ${winner.nickname} vince la Murra contro ${loser.nickname}.`);
-    room.auction.bidderId = winner.id;
+    room.auction.bidderId = winner.id; // chi vince la sfida si aggiudica l'asta al prezzo dell'offerta in corso
     return endAuction(room);
   }
-  log(room, `🏆 ${winner.nickname} vince la Murra contro ${loser.nickname}.`);
   pay(room, loser, winner, m.stake, 'la Murra');
   finishAction(room);
 }
@@ -1141,7 +1196,7 @@ io.on('connection', (socket) => {
     if (a.bidderId === player.id) fail('BAD', 'L\'offerta più alta è già tua.');
     if (!Number.isFinite(bid) || bid < auctionMinBid(room)) fail('BAD', `L'offerta minima è ${euro(auctionMinBid(room))}.`);
     if (bid > player.money) fail('NO_MONEY', 'Non hai abbastanza soldi.');
-    Object.assign(a, { bid, bidderId: player.id });
+    Object.assign(a, { bid, bidderId: player.id, murraRefused: false });
     log(room, `💰 ${player.nickname} offre ${euro(bid)} per ${CELLS[a.cell].name}.`);
     armAuction(room, AUCTION_BID_MS);
     broadcast(room);
@@ -1162,8 +1217,8 @@ io.on('connection', (socket) => {
       fail('BAD', 'Puoi lanciare la Murra solo quando l\'asta è rimasta a due e l\'offerta più alta è dell\'altro.');
     }
     const { cell, bid, bidderId } = room.auction;
-    room.murra = newMurra('auction', player.id, bidderId);
-    log(room, `🤜 ${player.nickname} sfida ${playerById(room, bidderId).nickname} a Murra: chi vince compra ${CELLS[cell].name} a ${euro(bid)}!`);
+    room.murra = newMurra('auction', player.id, bidderId); // parte dalla fase 'offer': lo sfidato deve accettare
+    log(room, `🤜 ${player.nickname} sfida ${playerById(room, bidderId).nickname} a Murra per ${CELLS[cell].name}: se accetta, chi vince la compra a ${euro(bid)}.`);
     beginMurra(room);
     broadcast(room);
   });
@@ -1175,20 +1230,41 @@ io.on('connection', (socket) => {
     return { ...c, m: c.room.murra };
   };
 
-  // Carta Imprevisti: chi l'ha pescata sceglie chi sfidare.
+  // Asta: lo sfidato accetta o rifiuta la sfida.
+  on('murra:respond', ({ accept }) => {
+    const { room, player, m } = inMurra();
+    if (m.stage !== 'offer' || m.b !== player.id) fail('BAD', 'Nessuna sfida a cui rispondere.');
+    if (accept) {
+      log(room, `🤜 ${player.nickname} accetta la sfida a Murra!`);
+      startMurraPlay(room);
+    } else {
+      refuseMurra(room);
+    }
+    broadcast(room);
+  });
+
+  // Carta Imprevisti o Parcheggio Gratuito: chi lancia la sfida sceglie l'avversario.
   on('murra:choose', ({ to }) => {
     const { room, player, m } = inMurra();
-    if (m.b || m.a !== player.id) fail('BAD', 'Non tocca a te scegliere.');
+    if (m.stage !== 'choose' || m.a !== player.id) fail('BAD', 'Non tocca a te scegliere.');
     const opponent = playerById(room, String(to));
     if (!opponent || opponent.bankrupt || opponent.id === player.id) fail('BAD', 'Scegli un giocatore ancora in gioco.');
     setMurraOpponent(room, opponent);
     broadcast(room);
   });
 
+  // Parcheggio Gratuito: la sfida è facoltativa.
+  on('murra:skip', () => {
+    const { room, player, m } = inMurra();
+    if (m.stage !== 'choose' || m.kind !== 'parking' || m.a !== player.id) fail('BAD', 'Non puoi rinunciare a questa sfida.');
+    skipMurra(room);
+    broadcast(room);
+  });
+
   // Giocata: quante dita mostro (1-5) e quale somma dichiaro (2-10).
   on('murra:play', ({ fingers, guess }) => {
     const { room, player, m } = inMurra();
-    if (!m.b || ![m.a, m.b].includes(player.id)) fail('BAD', 'Non stai giocando questa Murra.');
+    if (m.stage !== 'play' || ![m.a, m.b].includes(player.id)) fail('BAD', 'Non stai giocando questa Murra.');
     if (m.picks[player.id]) fail('BAD', 'Hai già giocato: aspetta l\'avversario.');
     const [f, g] = [Number(fingers), Number(guess)];
     if (!Number.isInteger(f) || f < 1 || f > MAX_FINGERS) fail('BAD', `Mostra da 1 a ${MAX_FINGERS} dita.`);

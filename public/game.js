@@ -581,7 +581,7 @@
       card.querySelector('.body').append(
         row(...raises.map((v) => button(euro(v), 'btn-green', () => send('auction:bid', { amount: v }), v > me.money))),
         // Asta rimasta a due: invece di rilanciare si può sfidare a Murra chi ha fatto l'offerta
-        ...(a.challengerId === me.id ? [button(`🤜 Murra! Se vinci la compri a ${euro(a.bid)}`, 'btn-pink', () => send('auction:murra'))] : []),
+        ...(a.challengerId === me.id ? [button(`🤜 Sfida a Murra per comprarla a ${euro(a.bid)}`, 'btn-pink', () => send('auction:murra'))] : []),
         button('Mi ritiro', 'btn-ghost', () => send('auction:pass')),
       );
     }
@@ -594,14 +594,15 @@
   /** Con n dita mie, la somma delle due mani può valere solo da n+1 a n+5. */
   const sumPossible = (sum, fingers) => !fingers || (sum > fingers && sum <= fingers + FINGERS.length);
 
-  /** Riquadro della sfida: lo vedono tutti; i due sfidanti scelgono dita e somma. */
+  /** Riquadro della sfida: lo vedono tutti. Cambia con la fase: scelta dell'avversario, sfida da accettare, mani da giocare. */
   function renderMurraBox(box) {
     const m = state.murra;
     const me = pl(meId());
     const a = pl(m.a), b = m.b && pl(m.b);
-    const prize = m.kind === 'card'
-      ? `Chi perde dà ${euro(m.stake)} a chi vince.`
-      : `Chi vince compra ${esc(CELLS[state.auction.cell].name)} a ${euro(state.auction.bid)}.`;
+    const name = (p) => `<b style="color:${p.color}">${esc(p.nickname)}</b>`;
+    const prize = m.kind === 'auction'
+      ? `Chi vince compra ${esc(CELLS[state.auction.cell].name)} a ${euro(state.auction.bid)}.`
+      : `Chi perde dà ${euro(m.stake)} a chi vince.`;
     const card = document.createElement('div');
     card.className = 'buy-card murra';
     const body = document.createElement('div');
@@ -609,24 +610,42 @@
     card.append(body);
     box.append(card);
 
-    if (!b) { // carta Imprevisti: prima si sceglie chi sfidare
+    if (m.stage === 'choose') { // carta Imprevisti o Parcheggio Gratuito: chi lancia sceglie l'avversario
+      const mine = a.id === me.id;
+      const optional = m.kind === 'parking'; // dal parcheggio la sfida è facoltativa
       body.innerHTML = `<div class="name">🤜 Murra!</div>
-        <div>${a.id === me.id ? 'Scegli chi sfidare:' : `${esc(a.nickname)} sta scegliendo chi sfidare…`}</div>
-        <div class="who">${prize}</div>`;
-      if (a.id !== me.id) return;
+        <div>${!mine ? `${name(a)} sta scegliendo chi sfidare…`
+          : optional ? 'Sei al Parcheggio Gratuito: vuoi sfidare qualcuno?' : 'Scegli chi sfidare:'}</div>
+        <div class="who">${prize} Si vince a ${RULES.MURRA_POINTS} punti.</div>`;
+      if (!mine) return;
       body.append(row(...state.players.filter((p) => !p.bankrupt && p.id !== me.id).map((p) => {
         const btn = button(p.nickname, '', () => send('murra:choose', { to: p.id }));
         btn.style.background = p.color;
         return btn;
       })));
+      if (optional) body.append(button('Non sfido nessuno', 'btn-ghost', () => send('murra:skip')));
+      return;
+    }
+
+    if (m.stage === 'offer') { // asta: lo sfidato decide se accettare
+      const mine = b.id === me.id;
+      body.innerHTML = `<div class="name">🤜 Murra!</div>
+        <div>${mine ? `${name(a)} ti sfida a Murra: accetti?` : `In attesa che ${name(b)} risponda alla sfida di ${name(a)}…`}</div>
+        <div class="who">${prize}${mine ? ' Se rifiuti, l\'asta continua.' : ''}</div>`;
+      if (mine) {
+        body.append(row(
+          button('✅ Accetto', 'btn-green', () => send('murra:respond', { accept: true })),
+          button('❌ Rifiuto', 'btn-pink', () => send('murra:respond', { accept: false })),
+        ));
+      }
       return;
     }
 
     const mark = (p) => (m.picked.includes(p.id) ? '✅' : '⏳');
     const playing = [a.id, b.id].includes(me.id);
-    body.innerHTML = `<div class="name">🤜 Murra!${m.round > 1 ? ` <small>mano ${m.round}</small>` : ''}</div>
-      <div class="versus"><b style="color:${a.color}">${esc(a.nickname)}</b> ${mark(a)} <span>contro</span> <b style="color:${b.color}">${esc(b.nickname)}</b> ${mark(b)}</div>
-      <div class="who">${prize}</div>`;
+    body.innerHTML = `<div class="name">🤜 Murra! <small>mano ${m.round}</small></div>
+      <div class="versus">${name(a)} ${mark(a)} <strong>${m.score[a.id]} – ${m.score[b.id]}</strong> ${mark(b)} ${name(b)}</div>
+      <div class="who">${prize} Chi indovina la somma fa un punto: si vince a ${RULES.MURRA_POINTS}.</div>`;
     if (playing && !m.picked.includes(me.id)) body.append(murraControls(m));
     else body.insertAdjacentHTML('beforeend', `<div class="who">${playing ? 'Hai giocato: in attesa dell\'avversario…' : 'Stanno scegliendo…'}</div>`);
   }
@@ -669,25 +688,31 @@
     return wrap;
   }
 
-  /** Rivelazione di una mano: le due mani, le somme dichiarate e l'esito. */
+  /** Rivelazione di una mano: le due mani, le somme dichiarate, il punto e il punteggio. */
   function showMurraReveal(step) {
     return new Promise((resolve) => {
-      const timer = setTimeout(closeModal, 5000);
+      const winner = step.winnerId && pl(step.winnerId);
+      const scorer = step.scorerId && pl(step.scorerId);
+      const timer = setTimeout(closeModal, winner ? 6000 : 3500); // le mani intermedie scorrono più veloci
       const side = (s) => {
         const p = pl(s.id);
-        return `<div class="murra-side${step.winnerId === s.id ? ' win' : ''}">
+        const points = step.score[s.id];
+        return `<div class="murra-side${step.scorerId === s.id ? ' win' : ''}">
           <b style="color:${p?.color}">${esc(p?.nickname || '')}</b>
           <div class="murra-hand">${FINGERS[s.fingers - 1]}</div>
           <div>${s.fingers} ${s.fingers === 1 ? 'dito' : 'dita'}</div>
-          <div class="said">dice <b>${s.guess}</b></div></div>`;
+          <div class="said">dice <b>${s.guess}</b></div>
+          <div class="points" aria-label="${points} punti">${'●'.repeat(points)}${'○'.repeat(Math.max(0, RULES.MURRA_POINTS - points))}</div></div>`;
       };
-      const w = step.winnerId && pl(step.winnerId);
-      const outcome = !w ? 'Pari: si rigioca! 🔁'
-        : step.byLuck ? `Ancora pari: la sorte premia ${esc(w.nickname)}! 🍀` : `Vince ${esc(w.nickname)}! 🏆`;
+      const bothRight = step.a.guess === step.sum && step.b.guess === step.sum;
+      const hand = scorer ? `Punto a ${esc(scorer.nickname)}! 🎯`
+        : bothRight ? 'Indovinano entrambi: nessun punto.' : 'Nessuno indovina: nessun punto.';
+      const final = !winner ? ''
+        : `<p class="murra-final">${step.cutShort ? 'Sfida chiusa in anticipo: vince' : 'Vince la Murra'} ${esc(winner.nickname)}! 🏆</p>`;
       openModal(`
         <h2>🤜 Murra! 🤛</h2>
         <div class="murra-reveal">${side(step.a)}<div class="murra-sum">Somma<b>${step.sum}</b></div>${side(step.b)}</div>
-        <p class="murra-outcome">${outcome}</p>
+        <p class="murra-outcome">${hand}</p>${final}
         <button class="btn btn-blue" data-close>OK!</button>`, 'murra-modal', () => { clearTimeout(timer); resolve(); });
     });
   }
@@ -899,7 +924,7 @@
       chance: 'Pesca una carta Imprevisti.',
       chest: 'Pesca una carta Probabilità.',
       jail: 'Se sei solo di passaggio non succede nulla.',
-      parking: 'Riposati, qui non succede niente. 😎',
+      parking: `Puoi sfidare un giocatore a Murra: chi perde dà ${euro(RULES.PARKING_MURRA_STAKE)} a chi vince. 🤜`,
       gotojail: 'Vai dritto in prigione senza passare dal VIA!.',
     }[cell.type];
     openModal(`

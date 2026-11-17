@@ -205,7 +205,7 @@ input:focus { border-color: var(--blue); }
 .murra .row .btn { flex: 1 1 30%; }
 .murra .name small { font-size: .9rem; color: var(--muted); font-weight: 500; }
 .versus { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.versus span { color: var(--muted); }
+.versus strong { font-size: 1.25rem; padding: 0 4px; font-variant-numeric: tabular-nums; }
 .murra-controls { display: flex; flex-direction: column; gap: 8px; }
 .murra-controls small { color: var(--muted); font-weight: 600; }
 .murra-fingers, .murra-sums { display: grid; gap: 6px; }
@@ -227,6 +227,8 @@ input:focus { border-color: var(--blue); }
 .murra-sum b { font-size: 2.2rem; color: var(--ink); }
 .murra-sum b, .murra-outcome, .murra-side .said { animation: appear .3s .9s both; } /* la suspense: prima le mani, poi il risultato */
 .murra-outcome { font-size: 1.2rem; font-weight: 700; }
+.murra-side .points { letter-spacing: 3px; color: var(--pink); font-size: 1.1rem; }
+.murra-final { font-size: 1.3rem; font-weight: 700; color: var(--pink); animation: appear .3s 1.2s both; }
 
 /* ---------- Chat ---------- */
 .chat { display: flex; flex-direction: column; gap: 8px; }

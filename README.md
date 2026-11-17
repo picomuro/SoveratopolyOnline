@@ -45,9 +45,10 @@ render.yaml          Blueprint per Render
 - **Debiti**: se non hai abbastanza soldi, il gioco ipoteca le tue proprietà e, se serve, vende le case in automatico. Se non basta sei in **bancarotta**: le tue proprietà vanno al creditore, o tornano libere se il debito era con la banca.
 - **Vince l'ultimo giocatore non in bancarotta.**
 - Ogni mossa (tirare i dadi, decidere un acquisto, chiudere il turno) ha un tempo massimo di 2 minuti. Se scade, il server tira i dadi, rinuncia all'acquisto o chiude il turno al posto del giocatore; se il giocatore è disconnesso lo fa dopo pochi secondi. Aste e Murra hanno tempi propri, più brevi.
-- **Murra**: minigioco a due. Ognuno sceglie in segreto quante dita mostrare (da 1 a 5) e dichiara la somma delle due mani (da 2 a 10). Vince chi si avvicina di più alla somma; a pari distanza si rigioca (dopo 5 pareggi decide la sorte). Ci sono 20 secondi per giocare, poi il server sceglie a caso. Si gioca in due casi:
-  - **Asta rimasta a due**: quando resta un solo rivale in grado di rilanciare, può premere "Murra" invece di rilanciare e sfidare chi ha fatto l'offerta. Chi vince compra la proprietà a quel prezzo.
-  - **Imprevisti**: due carte fanno scegliere un giocatore da sfidare; chi perde dà 150 € a chi vince.
+- **Murra**: minigioco a due. A ogni mano ognuno sceglie in segreto quante dita mostrare (da 1 a 5) e dichiara la somma delle due mani (da 2 a 10). Chi indovina la somma fa un punto; se indovinano entrambi, o nessuno, il punto non viene assegnato. Vince chi arriva per primo a 3 punti. Ci sono 20 secondi per ogni mano, poi il server sceglie a caso. Per non bloccare la partita, la sfida si chiude in anticipo dopo 30 mani o dopo 2 mani in cui nessuno dei due ha giocato: vince chi è avanti, a pari punti decide la sorte. Si gioca in tre casi:
+  - **Asta rimasta a due**: quando resta un solo rivale in grado di rilanciare, può sfidare a Murra chi ha fatto l'offerta invece di rilanciare. Lo sfidato ha 15 secondi per accettare o rifiutare. Se accetta, chi vince compra la proprietà a quel prezzo. Se rifiuta, l'asta continua e la sfida non si può riproporre finché l'offerta non cambia.
+  - **Parcheggio Gratuito**: chi ci arriva può sfidare un giocatore a sua scelta (o rinunciare). Lo sfidato non può rifiutare; chi perde dà 150 € a chi vince.
+  - **Imprevisti**: due carte obbligano a scegliere un giocatore da sfidare; lo sfidato non può rifiutare e chi perde dà 150 € a chi vince.
 - **Chat**: in sala d'attesa e in partita si possono scrivere messaggi brevi (massimo 120 caratteri, uno ogni 1,5 secondi). Il testo non viene filtrato né censurato: parole e link compaiono così come sono scritti. Restano anche le reazioni con le emoji.
 - **Rivincita**: a fine partita l'host può avviarne un'altra. Partecipano solo i giocatori ancora connessi.
 
@@ -65,7 +66,7 @@ render.yaml          Blueprint per Render
 | `trade:propose {to, giveProps, getProps, giveMoney, getMoney, giveCards, getCards}` | |
 | `trade:respond {accept}`, `trade:cancel` | |
 | `auction:bid {amount}`, `auction:pass`, `auction:murra` | |
-| `murra:choose {to}`, `murra:play {fingers, guess}` | |
+| `murra:choose {to}`, `murra:skip`, `murra:respond {accept}`, `murra:play {fingers, guess}` | |
 | `chat:send {text}` | `chat:message {id, playerId, nickname, color, text}` |
 | `chat:react {id}` | |
 
