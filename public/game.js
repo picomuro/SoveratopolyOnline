@@ -693,7 +693,7 @@
         wrap.querySelector('.murra-sums').append(btn);
       }
       wrap.append(button('🤜 Gioca!', 'btn-big btn-pink',
-        () => send('murra:play', { fingers: murraSel.fingers, guess: murraSel.guess }), !murraSel.fingers || !murraSel.guess));
+        () => send('murra:play', { fingers: murraSel.fingers, guess: murraSel.guess, round: m.round }), !murraSel.fingers || !murraSel.guess));
     };
     draw();
     return wrap;
@@ -748,8 +748,10 @@
     const timer = `<span class="timer" data-deadline="${t.expires}"></span>`;
     if (t.to === meId()) {
       el.innerHTML = `<b>🤝 ${esc(from.nickname)} ti propone uno scambio ${timer}</b>${sides('Tu ricevi', 'Tu dai', t.give, t.get)}`;
+      const busy = !['roll', 'end'].includes(state.turn.phase); // asta, Murra o acquisto in corso
+      if (busy) el.insertAdjacentHTML('beforeend', '<small>Potrai accettare appena finisce la mossa in corso.</small>');
       el.append(row(
-        button('✅ Accetta', 'btn-green', () => send('trade:respond', { accept: true })),
+        button('✅ Accetta', 'btn-green', () => send('trade:respond', { accept: true }), busy),
         button('❌ Rifiuta', 'btn-pink', () => send('trade:respond', { accept: false })),
       ));
     } else if (t.from === meId()) {

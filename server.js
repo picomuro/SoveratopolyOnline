@@ -58,6 +58,7 @@ const MURRA_MAX_ROUNDS = 30;            // oltre 30 mani la sfida viene chiusa: 
 const MURRA_MAX_IDLE = 2;               // ...e così dopo 2 mani in cui nessuno dei due ha giocato
 const MAX_FINGERS = B.FINGERS.length;
 const HOST_GRACE_MS = 10000;            // l'host che ricarica la pagina non perde il ruolo
+const OFFLINE_MURRA_MS = 5000;         // Murra: chi deve decidere ed è scollegato da 5 s viene sostituito dal server
 const OFFLINE_LOG_MS = 5000;           // disconnessioni più brevi (es. ricarica della pagina) non finiscono in cronologia
 const LOBBY_GHOST_MS = 60 * 1000;       // in sala d'attesa un disconnesso viene rimosso dopo 60 s
 const ROOM_EMPTY_MS = 5 * 60 * 1000;    // stanza eliminata dopo 5 min con tutti disconnessi
@@ -367,6 +368,7 @@ function detach(socket) {
       broadcast(room);
     }, OFFLINE_LOG_MS);
   }
+  if (room.murra) watchMurraAbsence(room, player);
   // Se era il suo turno, accorcia il timer: il gioco non resta bloccato.
   if (isCurrent(room, player)) setTimer(room, true);
   if (room.hostId === player.id) {
@@ -893,6 +895,27 @@ function armMurra(room) {
   }, ms);
 }
 
+/**
+ * Chi deve decidere nella Murra si è scollegato: se non torna entro OFFLINE_MURRA_MS
+ * il server decide subito per lui, invece di far aspettare tutti fino allo scadere del tempo.
+ */
+function watchMurraAbsence(room, p) {
+  const m = room.murra;
+  const { stage, round } = m;
+  const decides = (stage === 'offer' && m.b === p.id) || (stage === 'choose' && m.a === p.id)
+    || (stage === 'play' && [m.a, m.b].includes(p.id) && !m.picks[p.id]);
+  if (!decides) return;
+  setTimeout(() => {
+    if (rooms.get(room.code) !== room || room.murra !== m || m.stage !== stage || m.round !== round || p.connected) return;
+    if (stage !== 'play') murraTimeout(room);
+    else {
+      m.picks[p.id] ??= randomMurraPick();
+      if (m.picks[m.a] && m.picks[m.b]) resolveMurraRound(room);
+    }
+    broadcast(room);
+  }, OFFLINE_MURRA_MS);
+}
+
 /** Tempo scaduto: il server decide al posto di chi non l'ha fatto. */
 function murraTimeout(room) {
   const m = room.murra;
@@ -1054,6 +1077,9 @@ function validateTrade(room, t) {
   if (to.money < t.get.money) fail('NO_MONEY', `${to.nickname} non ha abbastanza soldi.`);
   return [from, to];
 }
+
+/** Fasi del turno in cui gli scambi si possono proporre e accettare. */
+const tradeOpenPhase = (room) => room.phase === 'playing' && ['roll', 'end'].includes(room.turn.phase);
 
 function cancelTrade(room, reason) {
   if (!room.trade) return;
@@ -1243,6 +1269,8 @@ io.on('connection', (socket) => {
     const { room, player } = ctx();
     const t = room.trade;
     if (!t || t.to !== player.id) fail('BAD', 'Nessuno scambio a cui rispondere.');
+    // Come per la proposta: niente scambi mentre si decide un acquisto o durante un'asta o una Murra.
+    if (accept && !tradeOpenPhase(room)) fail('BAD_PHASE', 'Potrai accettare appena finisce la mossa in corso.');
     if (accept) {
       const [from, to] = validateTrade(room, t);
       for (const i of t.give.props) room.props[i].owner = to.id;
@@ -1351,10 +1379,12 @@ io.on('connection', (socket) => {
     broadcast(room);
   });
 
-  // Giocata: quante dita mostro (1-5) e quale somma dichiaro (2-10).
-  on('murra:play', ({ fingers, guess }) => {
+  // Giocata: quante dita mostro (1-5) e quale somma dichiaro (2-10), per la mano indicata.
+  on('murra:play', ({ fingers, guess, round }) => {
     const { room, player, m } = inMurra();
     if (m.stage !== 'play' || ![m.a, m.b].includes(player.id)) fail('BAD', 'Non stai giocando questa Murra.');
+    // Una giocata arrivata in ritardo non deve finire nella mano successiva.
+    if (Number(round) !== m.round) fail('BAD', 'Questa mano è già finita.');
     if (m.picks[player.id]) fail('BAD', 'Hai già giocato: aspetta l\'avversario.');
     const [f, g] = [Number(fingers), Number(guess)];
     if (!Number.isInteger(f) || f < 1 || f > MAX_FINGERS) fail('BAD', `Mostra da 1 a ${MAX_FINGERS} dita.`);
