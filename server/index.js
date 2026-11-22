@@ -1,0 +1,51 @@
+/**
+ * Soveratopoly — avvio del server multiplayer.
+ * Express serve i file statici, Socket.IO gestisce le partite.
+ * Tutto lo stato è in memoria: un riavvio cancella le stanze.
+ */
+import http from 'node:http';
+import { Server } from 'socket.io';
+import { ALLOWED_ORIGINS, CLEANUP_EVERY_MS, HOST, MAX_MESSAGE_BYTES, PORT } from './config.js';
+import { createApp } from './http.js';
+import { registerSocketHandlers } from './socket.js';
+import { cleanupRooms } from './rooms.js';
+import { sweepIpHits } from './limits.js';
+
+/** Solo pagine dello stesso sito (o di ALLOWED_ORIGINS). I client senza Origin (script, test) passano. */
+function allowRequest(req, cb) {
+  const { origin } = req.headers;
+  let sameSite = false;
+  try {
+    sameSite = new URL(origin).host === req.headers.host;
+  } catch {
+    /* origine assente o non valida */
+  }
+  cb(null, !origin || sameSite || ALLOWED_ORIGINS.includes(origin));
+}
+
+const server = http.createServer(createApp());
+const io = new Server(server, {
+  pingInterval: 20000,
+  pingTimeout: 20000,
+  maxHttpBufferSize: MAX_MESSAGE_BYTES,
+  allowRequest,
+});
+const { broadcast } = registerSocketHandlers(io);
+
+// Pulizia periodica: posti abbandonati in sala d'attesa, stanze vuote o inattive, contatori anti-abuso.
+const cleanup = setInterval(() => {
+  sweepIpHits();
+  for (const room of cleanupRooms()) broadcast(room);
+}, CLEANUP_EVERY_MS);
+cleanup.unref();
+
+server.listen(PORT, HOST, () => console.log(`Soveratopoly in ascolto su http://${HOST}:${PORT}`));
+
+// Render manda SIGTERM a ogni deploy: chiude le connessioni in modo ordinato (le partite in memoria si perdono comunque).
+function shutdown(signal) {
+  console.log(`${signal}: chiusura del server`);
+  io.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 5000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
