@@ -57,6 +57,7 @@ const MURRA_MAX_ROUNDS = 30;            // oltre 30 mani la sfida viene chiusa: 
 const MURRA_MAX_IDLE = 2;               // ...e così dopo 2 mani in cui nessuno dei due ha giocato
 const MAX_FINGERS = B.FINGERS.length;
 const HOST_GRACE_MS = 10000;            // l'host che ricarica la pagina non perde il ruolo
+const OFFLINE_LOG_MS = 5000;           // disconnessioni più brevi (es. ricarica della pagina) non finiscono in cronologia
 const LOBBY_GHOST_MS = 60 * 1000;       // in sala d'attesa un disconnesso viene rimosso dopo 60 s
 const ROOM_EMPTY_MS = 5 * 60 * 1000;    // stanza eliminata dopo 5 min con tutti disconnessi
 const ROOM_IDLE_MS = 30 * 60 * 1000;    // ...o dopo 30 min senza attività
@@ -99,7 +100,8 @@ const DECKS = {
       { text: 'Parcheggiasti supa i strisci cunnu, paga $20.', note: 'Paghi 20 €.', kind: 'money', value: -20 },
       { text: 'Hai u paghi i debiti chi dassau Gidari, paga $50 a tutti.', note: 'Paghi 50 € a ogni giocatore.', kind: 'payEach', value: 50 },
       // Le due sfide a Murra non sono nel documento delle carte: restano dal minigioco.
-      { text: 'Sfida a Murra!', note: 'Scegli un giocatore e sfidalo: chi perde dà 150 € a chi vince.', kind: 'murra', value: 150, copies: 2 },
+      { text: 'Sfida a Murra a 3 punti!', note: 'Scegli un giocatore e sfidalo: vince chi arriva a 3 punti, chi perde dà 150 € a chi vince.', kind: 'murra', value: 150, points: 3 },
+      { text: 'Murra secca!', note: 'Scegli un giocatore e sfidalo: vince chi fa il primo punto, chi perde dà 150 € a chi vince.', kind: 'murra', value: 150, points: 1 },
     ],
   },
   chest: {
@@ -155,9 +157,14 @@ function newCode() {
 }
 
 /** Nickname sicuro: niente HTML, max 14 caratteri, unico nella stanza. */
-function cleanNick(raw, room) {
+/** Nickname ripulito, senza il numero aggiunto per i doppioni. */
+function baseNick(raw) {
   const text = String(raw || '').replace(/[<>&"'`\\]/g, '').replace(/\s+/g, ' ').trim();
-  const base = Array.from(text).slice(0, 14).join('') || 'Giocatore'; // Array.from: non spezza le emoji
+  return Array.from(text).slice(0, 14).join('') || 'Giocatore'; // Array.from: non spezza le emoji
+}
+
+function cleanNick(raw, room) {
+  const base = baseNick(raw);
   let nick = base;
   for (let k = 2; room.players.some((p) => p.nickname.toLowerCase() === nick.toLowerCase()); k++) {
     nick = `${Array.from(base).slice(0, 12).join('')}${k}`;
@@ -273,7 +280,7 @@ function publicState(room) {
     auction: room.auction && { ...room.auction, challengerId: murraChallenger(room) },
     // Le scelte restano segrete fino alla rivelazione: ai client arriva solo chi ha già giocato.
     murra: room.murra && {
-      kind: room.murra.kind, stake: room.murra.stake, a: room.murra.a, b: room.murra.b,
+      kind: room.murra.kind, stake: room.murra.stake, goal: room.murra.goal, a: room.murra.a, b: room.murra.b,
       stage: room.murra.stage, score: room.murra.score,
       round: room.murra.round, picked: Object.keys(room.murra.picks),
     },
@@ -297,6 +304,10 @@ function attach(socket, room, player) {
   socket.join(room.code);
   socket.data = { code: room.code, playerId: player.id };
   Object.assign(player, { socketId: socket.id, connected: true, disconnectedAt: null });
+  if (player.offlineLogged) {
+    player.offlineLogged = false;
+    if (room.phase === 'playing') log(room, `🔌 ${player.nickname} è rientrato in partita.`);
+  }
   room.emptySince = null;
   touch(room);
   fixHost(room, HOST_GRACE_MS);
@@ -315,6 +326,16 @@ function detach(socket) {
   socket.leave(room.code);
   Object.assign(player, { socketId: null, connected: false, disconnectedAt: Date.now() });
   if (!connectedCount(room)) room.emptySince = Date.now();
+  if (room.phase === 'playing' && !player.bankrupt) {
+    const since = player.disconnectedAt;
+    setTimeout(() => {
+      if (rooms.get(room.code) !== room || room.phase !== 'playing' || player.connected
+        || player.disconnectedAt !== since || player.bankrupt) return;
+      player.offlineLogged = true;
+      log(room, `📴 ${player.nickname} si è disconnesso: può rientrare con lo stesso codice e lo stesso nickname.`);
+      broadcast(room);
+    }, OFFLINE_LOG_MS);
+  }
   // Se era il suo turno, accorcia il timer: il gioco non resta bloccato.
   if (isCurrent(room, player)) setTimer(room, true);
   if (room.hostId === player.id) {
@@ -594,7 +615,7 @@ function drawCard(room, p, deckName, anim, diceSum, cardDepth) {
       break;
     case 'murra':
       // La sfida parte a fine azione (vedi finishAction), dopo l'animazione della carta.
-      room.murra = newMurra('card', p.id, null, card.value);
+      room.murra = newMurra('card', p.id, null, card.value, card.points);
       break;
     case 'repairs': {
       const total = ownedBy(room, p.id).reduce((sum, i) => {
@@ -769,7 +790,7 @@ function endAuction(room) {
 // ---------------------------------------------------------------------------
 // Murra: minigioco a due. A ogni mano ognuno mostra da 1 a 5 dita e dichiara la
 // somma delle due mani (2-10). Chi indovina la somma fa un punto (se indovinano
-// entrambi, o nessuno, il punto non viene assegnato). Vince chi arriva a 3 punti.
+// entrambi, o nessuno, il punto non viene assegnato). Vince chi arriva a 3 punti; nelle aste basta il primo.
 // Si gioca in tre casi (kind):
 //  - 'auction': in un'asta rimasta a due, il rivale sfida chi ha fatto l'offerta.
 //               Lo sfidato può accettare o rifiutare; chi vince compra al prezzo offerto.
@@ -780,8 +801,9 @@ function endAuction(room) {
 // se accettare, 'play' = si giocano le mani.
 // ---------------------------------------------------------------------------
 /** a = chi lancia la sfida, b = lo sfidato (null finché non viene scelto). */
-const newMurra = (kind, a, b, stake = 0) => ({
+const newMurra = (kind, a, b, stake = 0, goal = kind === 'auction' ? RULES.MURRA_AUCTION_POINTS : RULES.MURRA_POINTS) => ({
   kind, stake, a, b, stage: kind === 'auction' ? 'offer' : 'choose',
+  goal, // punti per vincere
   picks: {}, round: 1, score: {}, idle: 0,
 });
 
@@ -883,13 +905,13 @@ function resolveMurraRound(room) {
   if (scorerId) m.score[scorerId]++;
   const [sa, sb] = [m.score[m.a], m.score[m.b]];
 
-  let winnerId = sa >= RULES.MURRA_POINTS ? m.a : sb >= RULES.MURRA_POINTS ? m.b : null;
+  let winnerId = sa >= m.goal ? m.a : sb >= m.goal ? m.b : null;
   // Sfida troppo lunga, o giocatori assenti: vince chi è avanti; a pari punti decide la sorte.
   const cutShort = !winnerId && (m.round >= MURRA_MAX_ROUNDS || m.idle >= MURRA_MAX_IDLE);
   if (cutShort) winnerId = sa > sb ? m.a : sb > sa ? m.b : crypto.randomInt(2) ? m.a : m.b;
 
   io.to(room.code).emit('game:anim', {
-    steps: [{ t: 'murra', a: { id: m.a, ...pa }, b: { id: m.b, ...pb }, sum, scorerId, score: { ...m.score }, winnerId, cutShort }],
+    steps: [{ t: 'murra', a: { id: m.a, ...pa }, b: { id: m.b, ...pb }, sum, scorerId, score: { ...m.score }, goal: m.goal, winnerId, cutShort }],
   });
   log(room, `🤜 Murra: ${na} mostra ${pa.fingers} e dice ${pa.guess}, ${nb} mostra ${pb.fingers} e dice ${pb.guess}. Somma ${sum}: ${
     scorerId ? `punto a ${scorerId === m.a ? na : nb}` : hitA ? 'indovinano entrambi, nessun punto' : 'nessun punto'} (${sa}-${sb}).`);
@@ -1052,7 +1074,15 @@ io.on('connection', (socket) => {
   on('room:join', ({ code, nickname }) => {
     const room = rooms.get(String(code || '').toUpperCase().trim());
     if (!room) fail('NO_SUCH_ROOM', 'Nessuna stanza con questo codice.');
-    if (room.phase === 'playing') fail('GAME_STARTED', 'La partita è già iniziata.');
+    // Stesso nickname di un giocatore disconnesso: riprende il suo posto, con soldi e proprietà.
+    const wanted = baseNick(nickname).toLowerCase();
+    const same = room.players.find((p) => p.nickname.toLowerCase() === wanted);
+    if (same && !same.connected) return attach(socket, room, same);
+    if (room.phase === 'playing') {
+      fail('GAME_STARTED', same
+        ? `${same.nickname} risulta ancora collegato. Se sei tu, riprova tra qualche secondo.`
+        : 'La partita è già iniziata: puoi rientrare solo con il nickname che avevi.');
+    }
     const player = addPlayer(room, nickname);
     log(room, `👋 ${player.nickname} è entrato.`);
     return attach(socket, room, player);

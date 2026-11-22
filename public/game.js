@@ -597,6 +597,8 @@
   /** Con n dita mie, la somma delle due mani può valere solo da n+1 a n+5. */
   const sumPossible = (sum, fingers) => !fingers || (sum > fingers && sum <= fingers + FINGERS.length);
 
+  const goalText = (goal) => (goal === 1 ? 'Vince chi indovina per primo la somma.' : `Si vince a ${goal} punti.`);
+
   /** Riquadro della sfida: lo vedono tutti. Cambia con la fase: scelta dell'avversario, sfida da accettare, mani da giocare. */
   function renderMurraBox(box) {
     const m = state.murra;
@@ -619,7 +621,7 @@
       body.innerHTML = `<div class="name">🤜 Murra!</div>
         <div>${!mine ? `${name(a)} sta scegliendo chi sfidare…`
           : optional ? 'Sei al Parcheggio Gratuito: vuoi sfidare qualcuno?' : 'Scegli chi sfidare:'}</div>
-        <div class="who">${prize} Si vince a ${RULES.MURRA_POINTS} punti.</div>`;
+        <div class="who">${prize} ${goalText(m.goal)}</div>`;
       if (!mine) return;
       body.append(row(...state.players.filter((p) => !p.bankrupt && p.id !== me.id).map((p) => {
         const btn = button(p.nickname, '', () => send('murra:choose', { to: p.id }));
@@ -648,7 +650,7 @@
     const playing = [a.id, b.id].includes(me.id);
     body.innerHTML = `<div class="name">🤜 Murra! <small>mano ${m.round}</small></div>
       <div class="versus">${name(a)} ${mark(a)} <strong>${m.score[a.id]} – ${m.score[b.id]}</strong> ${mark(b)} ${name(b)}</div>
-      <div class="who">${prize} Chi indovina la somma fa un punto: si vince a ${RULES.MURRA_POINTS}.</div>`;
+      <div class="who">${prize} ${m.goal === 1 ? 'Vince chi indovina per primo la somma.' : `Chi indovina la somma fa un punto: si vince a ${m.goal}.`}</div>`;
     if (playing && !m.picked.includes(me.id)) body.append(murraControls(m));
     else body.insertAdjacentHTML('beforeend', `<div class="who">${playing ? 'Hai giocato: in attesa dell\'avversario…' : 'Stanno scegliendo…'}</div>`);
   }
@@ -705,7 +707,7 @@
           <div class="murra-hand">${FINGERS[s.fingers - 1]}</div>
           <div>${s.fingers} ${s.fingers === 1 ? 'dito' : 'dita'}</div>
           <div class="said">dice <b>${s.guess}</b></div>
-          <div class="points" aria-label="${points} punti">${'●'.repeat(points)}${'○'.repeat(Math.max(0, RULES.MURRA_POINTS - points))}</div></div>`;
+          <div class="points" aria-label="${points} punti">${'●'.repeat(points)}${'○'.repeat(Math.max(0, step.goal - points))}</div></div>`;
       };
       const bothRight = step.a.guess === step.sum && step.b.guess === step.sum;
       const hand = scorer ? `Punto a ${esc(scorer.nickname)}! 🎯`

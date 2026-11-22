@@ -81,7 +81,8 @@
     STATION_RENT: [0, 25, 50, 100, 200],  // per numero di "stazioni" possedute
     UTILITY_MULT: [0, 4, 10],             // dadi x 4 (una) o x 10 (entrambe)
     MAX_HOUSES: 5,
-    MURRA_POINTS: 3,                      // la Murra si vince a 3 punti
+    MURRA_POINTS: 3,                      // la Murra si vince a 3 punti...
+    MURRA_AUCTION_POINTS: 1,              // ...ma nelle aste basta il primo punto, per non rallentare il gioco
     PARKING_MURRA_STAKE: 150,             // posta della sfida lanciata dal Parcheggio Gratuito
     MAX_PLAYERS: 8,
     AUCTION_MIN_STEP: 10,                 // rilancio minimo in un'asta
