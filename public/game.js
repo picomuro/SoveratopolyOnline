@@ -65,7 +65,13 @@
     if (session && !replaced) rejoin(); // una scheda sostituita non si riprende il posto da sola
   });
   socket.on('disconnect', () => showWake('Connessione persa, mi riconnetto…'));
-  socket.on('connect_error', () => {
+  socket.on('connect_error', (err) => {
+    // Connessione rifiutata dal server (es. troppe connessioni dallo stesso indirizzo): niente retry automatico.
+    if (!socket.active) {
+      showWake(err.message, 'Riprovo tra un minuto…');
+      setTimeout(() => socket.connect(), 60000);
+      return;
+    }
     if (!everConnected) showWake('Sto svegliando il server, attendi qualche secondo…',
       'Il server gratuito si addormenta dopo 15 minuti: può volerci fino a un minuto.');
   });

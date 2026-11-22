@@ -28,7 +28,8 @@ app.use(express.static(path.join(__dirname, 'public'), {
 }));
 
 const server = http.createServer(app);
-const io = new Server(server, { pingInterval: 20000, pingTimeout: 20000 });
+// Messaggi piccoli: nessun evento del gioco supera pochi KB.
+const io = new Server(server, { pingInterval: 20000, pingTimeout: 20000, maxHttpBufferSize: 16 * 1024 });
 
 // ---------------------------------------------------------------------------
 // Costanti
@@ -62,6 +63,11 @@ const LOBBY_GHOST_MS = 60 * 1000;       // in sala d'attesa un disconnesso viene
 const ROOM_EMPTY_MS = 5 * 60 * 1000;    // stanza eliminata dopo 5 min con tutti disconnessi
 const ROOM_IDLE_MS = 30 * 60 * 1000;    // ...o dopo 30 min senza attività
 const CLEANUP_EVERY_MS = 30 * 1000;
+// Limiti anti-abuso: per connessione su tutti gli eventi, per indirizzo IP su connessioni e ingressi.
+const EVENT_BURST = 20;                 // eventi consecutivi ammessi da una connessione...
+const EVENT_RATE = 10;                  // ...che poi si ricaricano a 10 al secondo
+const IP_WINDOW_MS = 60 * 1000;
+const IP_LIMITS = { connect: 40, create: 20, join: 60 }; // per IP, ogni minuto
 
 // Carte scritte dall'autore del gioco, in dialetto. "note" spiega l'effetto in italiano
 // (compare sotto il testo della carta); "copies" dice quante volte la carta è nel mazzo.
@@ -148,6 +154,9 @@ const shuffle = (arr) => {
 };
 const die = () => crypto.randomInt(1, 7);
 
+/** Codice stanza come lo scrive l'utente: maiuscolo e senza spazi. */
+const normCode = (code) => String(code ?? '').trim().toUpperCase().slice(0, 8);
+
 function newCode() {
   let code;
   do {
@@ -185,6 +194,28 @@ const isCurrent = (room, p) => room.phase === 'playing' && current(room).id === 
 /** Indici delle caselle possedute da un giocatore. */
 const ownedBy = (room, id) => Object.keys(room.props).map(Number).filter((i) => room.props[i].owner === id);
 const touch = (room) => { room.lastActivity = Date.now(); };
+
+/** Conteggio a finestra fissa per indirizzo IP: al massimo `max` volte ogni IP_WINDOW_MS per tipo di azione. */
+const ipHits = new Map(); // `${tipo}:${ip}` -> { count, since }
+function ipAllowed(kind, ip) {
+  if (ip === null) return true; // sviluppo in locale: nessun limite
+  const key = `${kind}:${ip}`;
+  const now = Date.now();
+  const hit = ipHits.get(key);
+  if (!hit || now - hit.since >= IP_WINDOW_MS) { ipHits.set(key, { count: 1, since: now }); return true; }
+  return ++hit.count <= IP_LIMITS[kind];
+}
+
+/**
+ * Indirizzo del client: dietro il proxy di Render è il primo di X-Forwarded-For.
+ * null per le connessioni dirette da questa macchina (sviluppo e test), che non hanno limiti per IP.
+ */
+function clientIp(socket) {
+  const fwd = socket.handshake.headers['x-forwarded-for'];
+  if (typeof fwd === 'string' && fwd.trim()) return fwd.split(',')[0].trim();
+  const addr = socket.handshake.address;
+  return ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(addr) ? null : addr;
+}
 
 // ---------------------------------------------------------------------------
 // Stanze e giocatori
@@ -1034,12 +1065,31 @@ function cancelTrade(room, reason) {
 // ---------------------------------------------------------------------------
 // Socket.IO
 // ---------------------------------------------------------------------------
+// Troppe connessioni dallo stesso indirizzo: rifiutate prima di arrivare al gioco.
+io.use((socket, next) => {
+  if (ipAllowed('connect', clientIp(socket))) return next();
+  next(new Error('Troppe connessioni: riprova tra un minuto.'));
+});
+
 io.on('connection', (socket) => {
+  const ip = clientIp(socket);
+  // Secchiello di gettoni: EVENT_BURST eventi di fila, poi EVENT_RATE al secondo.
+  const bucket = { tokens: EVENT_BURST, at: Date.now() };
+  const takeToken = () => {
+    const now = Date.now();
+    bucket.tokens = Math.min(EVENT_BURST, bucket.tokens + ((now - bucket.at) / 1000) * EVENT_RATE);
+    bucket.at = now;
+    if (bucket.tokens < 1) return false;
+    bucket.tokens--;
+    return true;
+  };
+
   /** Registra un handler: risponde sempre con un ack { ok, ... } oppure { ok: false, error, message }. */
   const on = (event, fn) => socket.on(event, (payload, cb) => {
     if (typeof payload === 'function') { cb = payload; payload = null; }
     if (typeof cb !== 'function') cb = () => {};
     if (!payload || typeof payload !== 'object') payload = {};
+    if (!takeToken()) return cb({ ok: false, error: 'RATE_LIMIT', message: 'Troppe richieste: rallenta un attimo.' });
     try {
       cb({ ok: true, ...fn(payload) });
     } catch (e) {
@@ -1066,13 +1116,19 @@ io.on('connection', (socket) => {
   };
 
   // --- Stanze ---------------------------------------------------------------
+  const limitIp = (kind) => {
+    if (!ipAllowed(kind, ip)) fail('RATE_LIMIT', 'Troppi tentativi: riprova tra un minuto.');
+  };
+
   on('room:create', ({ nickname }) => {
+    limitIp('create');
     const room = createRoom();
     return attach(socket, room, addPlayer(room, nickname));
   });
 
   on('room:join', ({ code, nickname }) => {
-    const room = rooms.get(String(code || '').toUpperCase().trim());
+    limitIp('join');
+    const room = rooms.get(normCode(code));
     if (!room) fail('NO_SUCH_ROOM', 'Nessuna stanza con questo codice.');
     // Stesso nickname di un giocatore disconnesso: riprende il suo posto, con soldi e proprietà.
     const wanted = baseNick(nickname).toLowerCase();
@@ -1090,7 +1146,8 @@ io.on('connection', (socket) => {
 
   // Rientro dopo disconnessione o ricarica della pagina: stesso posto, stessi soldi.
   on('room:rejoin', ({ code, token }) => {
-    const room = rooms.get(String(code || '').toUpperCase());
+    limitIp('join');
+    const room = rooms.get(normCode(code));
     if (!room) fail('ROOM_NOT_FOUND', 'Il server si è riavviato oppure la stanza è rimasta inattiva troppo a lungo.');
     const player = room.players.find((p) => p.token === token);
     if (!player) fail('ROOM_NOT_FOUND', 'Non fai più parte di questa stanza.');
@@ -1162,7 +1219,7 @@ io.on('connection', (socket) => {
   on('trade:propose', ({ to, giveProps, getProps, giveMoney, getMoney, giveCards, getCards }) => {
     const { room, player } = myTurn('roll', 'end');
     if (room.trade) fail('BAD', 'C\'è già uno scambio in corso.');
-    const ids = (a) => [...new Set(Array.isArray(a) ? a.map(Number) : [])].filter(B.isBuyable);
+    const ids = (a) => [...new Set(Array.isArray(a) ? a.slice(0, BOARD_SIZE).map(Number) : [])].filter(B.isBuyable);
     const money = (m) => { const n = Math.floor(Number(m)); return Number.isFinite(n) && n > 0 ? n : 0; };
     const trade = {
       from: player.id, to: String(to),
@@ -1339,6 +1396,7 @@ io.on('connection', (socket) => {
 // ---------------------------------------------------------------------------
 setInterval(() => {
   const now = Date.now();
+  for (const [key, hit] of ipHits) if (now - hit.since >= IP_WINDOW_MS) ipHits.delete(key);
   for (const room of rooms.values()) {
     // In sala d'attesa, chi è disconnesso da troppo tempo libera il posto.
     if (room.phase === 'lobby') {
