@@ -1,7 +1,16 @@
 /**
  * Gestione delle proprietà del giocatore di turno: case, alberghi, ipoteche.
  */
-import { CELLS, RULES, euro, groupOf, houseCost, houseSellValue, mortgageValue, unmortgageCost } from '../../shared/board-data.js';
+import {
+  CELLS,
+  RULES,
+  euro,
+  groupOf,
+  houseCost,
+  houseSellValue,
+  mortgageValue,
+  unmortgageCost,
+} from '../../shared/board-data.js';
 import { fail } from './errors.js';
 import { log } from './state.js';
 
@@ -23,7 +32,10 @@ export function manage(room, p, action, cellIdx) {
       if (p.money < cost) fail('NO_MONEY', 'Non hai abbastanza soldi.');
       p.money -= cost;
       pr.houses++;
-      log(room, `🔨 ${p.nickname} costruisce ${pr.houses === RULES.MAX_HOUSES ? 'un albergo' : 'una casa'} su ${cell.name}.`);
+      log(
+        room,
+        `🔨 ${p.nickname} costruisce ${pr.houses === RULES.MAX_HOUSES ? 'un albergo' : 'una casa'} su ${cell.name}.`,
+      );
       break;
     }
     case 'sell': {

@@ -55,21 +55,21 @@ render.yaml          Blueprint per Render
 
 ## Messaggi socket
 
-| Client → Server | Server → Client |
-|---|---|
-| `room:create {nickname}` | `room:state` (stato completo, senza token) |
-| `room:join {code, nickname}` | `game:anim {steps}` (dadi, movimenti, carte e mani di Murra da animare) |
-| `room:rejoin {code, token}` | `chat:reaction {playerId, emoji}` |
-| `room:leave` | `session:replaced` (la partita è stata aperta in un'altra scheda) |
-| `game:start`, `game:roll`, `game:payJail`, `game:useJailCard` | |
-| `game:buy`, `game:pass`, `game:endTurn` | |
-| `game:manage {action: build\|sell\|mortgage\|unmortgage, cell}` | |
-| `trade:propose {to, giveProps, getProps, giveMoney, getMoney, giveCards, getCards}` | |
-| `trade:respond {accept}`, `trade:cancel` | |
-| `auction:bid {amount}`, `auction:pass`, `auction:murra` | |
-| `murra:choose {to}`, `murra:skip`, `murra:respond {accept}`, `murra:play {fingers, guess}` | |
-| `chat:send {text}` | `chat:message {id, playerId, nickname, color, text}` |
-| `chat:react {id}` | |
+| Client → Server                                                                            | Server → Client                                                         |
+| ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| `room:create {nickname}`                                                                   | `room:state` (stato completo, senza token)                              |
+| `room:join {code, nickname}`                                                               | `game:anim {steps}` (dadi, movimenti, carte e mani di Murra da animare) |
+| `room:rejoin {code, token}`                                                                | `chat:reaction {playerId, emoji}`                                       |
+| `room:leave`                                                                               | `session:replaced` (la partita è stata aperta in un'altra scheda)       |
+| `game:start`, `game:roll`, `game:payJail`, `game:useJailCard`                              |                                                                         |
+| `game:buy`, `game:pass`, `game:endTurn`                                                    |                                                                         |
+| `game:manage {action: build\|sell\|mortgage\|unmortgage, cell}`                            |                                                                         |
+| `trade:propose {to, giveProps, getProps, giveMoney, getMoney, giveCards, getCards}`        |                                                                         |
+| `trade:respond {accept}`, `trade:cancel`                                                   |                                                                         |
+| `auction:bid {amount}`, `auction:pass`, `auction:murra`                                    |                                                                         |
+| `murra:choose {to}`, `murra:skip`, `murra:respond {accept}`, `murra:play {fingers, guess}` |                                                                         |
+| `chat:send {text}`                                                                         | `chat:message {id, playerId, nickname, color, text}`                    |
+| `chat:react {id}`                                                                          |                                                                         |
 
 Ogni richiesta del client riceve una risposta `{ok, error?, message?}`. L'errore `ROOM_NOT_FOUND` indica che la stanza (o il proprio posto) non esiste più: il client torna alla home e propone di crearne una nuova.
 

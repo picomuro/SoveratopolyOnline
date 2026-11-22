@@ -80,7 +80,8 @@ export function placeBid(room, p, amount) {
   const a = room.auction;
   const bid = Math.floor(Number(amount));
   if (a.bidderId === p.id) fail('BAD', "L'offerta più alta è già tua.");
-  if (!Number.isFinite(bid) || bid < auctionMinBid(room)) fail('BAD', `L'offerta minima è ${euro(auctionMinBid(room))}.`);
+  if (!Number.isFinite(bid) || bid < auctionMinBid(room))
+    fail('BAD', `L'offerta minima è ${euro(auctionMinBid(room))}.`);
   if (bid > p.money) fail('NO_MONEY', 'Non hai abbastanza soldi.');
   Object.assign(a, { bid, bidderId: p.id, murraRefused: false });
   log(room, `💰 ${p.nickname} offre ${euro(bid)} per ${CELLS[a.cell].name}.`);

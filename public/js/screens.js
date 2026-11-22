@@ -19,7 +19,11 @@ export function applyState(s) {
   const prev = state;
   setState(s);
   setClockOffset(s.serverNow - Date.now());
-  if (s.phase === 'lobby') { showScreen('wait'); renderWait(); return; }
+  if (s.phase === 'lobby') {
+    showScreen('wait');
+    renderWait();
+    return;
+  }
   showScreen('game');
   renderGame(prev);
   renderVictory();
@@ -31,7 +35,11 @@ const codeInput = $('#code');
 
 export function getNick() {
   const n = nickInput.value.trim();
-  if (!n) { toast('Scrivi prima il tuo nickname 😉'); nickInput.focus(); return null; }
+  if (!n) {
+    toast('Scrivi prima il tuo nickname 😉');
+    nickInput.focus();
+    return null;
+  }
   store.set('sov_nick', n);
   return n;
 }
@@ -50,22 +58,36 @@ export function joinRoom() {
 // ---------- Sala d'attesa ----------
 export function renderWait() {
   $('#wait-code').textContent = state.code;
-  $('#wait-players').innerHTML = state.players.map((p) => `
+  $('#wait-players').innerHTML = state.players
+    .map(
+      (p) => `
     <li><span class="dot" style="background:${p.color}"></span>
-    <b>${esc(p.nickname)}</b>${p.id === meId() ? ' (tu)' : ''} ${p.id === state.hostId ? '👑' : ''} ${p.connected ? '' : '📴'}</li>`).join('');
+    <b>${esc(p.nickname)}</b>${p.id === meId() ? ' (tu)' : ''} ${p.id === state.hostId ? '👑' : ''} ${p.connected ? '' : '📴'}</li>`,
+    )
+    .join('');
   const isHost = state.hostId === meId();
   const ready = state.players.filter((p) => p.connected).length;
   $('#btn-start').classList.toggle('hidden', !isHost);
   $('#btn-start').disabled = ready < 2;
-  $('#wait-hint').textContent = ready < 2 ? 'Condividi il codice: servono almeno 2 giocatori.'
-    : isHost ? `${ready} giocatori pronti!` : 'In attesa che l\'host avvii la partita…';
+  $('#wait-hint').textContent =
+    ready < 2
+      ? 'Condividi il codice: servono almeno 2 giocatori.'
+      : isHost
+        ? `${ready} giocatori pronti!`
+        : "In attesa che l'host avvii la partita…";
 }
 async function shareLink() {
   const url = `${location.origin}${location.pathname}?r=${state.code}`;
   try {
-    if (navigator.share) await navigator.share({ title: 'Soveratopoly', text: `Gioca con me a Soveratopoly! Codice ${state.code}`, url });
-    else { await navigator.clipboard.writeText(url); toast('Link copiato! 📋'); }
-  } catch { /* condivisione annullata */ }
+    if (navigator.share)
+      await navigator.share({ title: 'Soveratopoly', text: `Gioca con me a Soveratopoly! Codice ${state.code}`, url });
+    else {
+      await navigator.clipboard.writeText(url);
+      toast('Link copiato! 📋');
+    }
+  } catch {
+    /* condivisione annullata */
+  }
 }
 
 export async function leave() {
@@ -74,7 +96,8 @@ export async function leave() {
 }
 function leaveGame() {
   const me = pl(meId());
-  if (state.phase === 'playing' && !me.bankrupt && !confirm('Vuoi abbandonare? Le tue proprietà torneranno libere.')) return;
+  if (state.phase === 'playing' && !me.bankrupt && !confirm('Vuoi abbandonare? Le tue proprietà torneranno libere.'))
+    return;
   leave();
 }
 
@@ -84,8 +107,12 @@ export function initScreens() {
   codeInput.value = urlCode;
   $('#btn-create').onclick = createRoom;
   $('#btn-join').onclick = joinRoom;
-  codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(); });
-  nickInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') (codeInput.value.trim() ? joinRoom : createRoom)(); });
+  codeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') joinRoom();
+  });
+  nickInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') (codeInput.value.trim() ? joinRoom : createRoom)();
+  });
   $('#btn-share').onclick = shareLink;
   $('#btn-start').onclick = () => send('game:start');
   $('#btn-rematch').onclick = () => send('game:start');

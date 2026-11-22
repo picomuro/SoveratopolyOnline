@@ -63,7 +63,8 @@ export function registerSocketHandlers(io) {
         if (typeof payload === 'function') [cb, payload] = [payload, null];
         if (typeof cb !== 'function') cb = () => {};
         if (!payload || typeof payload !== 'object') payload = {};
-        if (!takeToken()) return cb({ ok: false, error: 'RATE_LIMIT', message: 'Troppe richieste: rallenta un attimo.' });
+        if (!takeToken())
+          return cb({ ok: false, error: 'RATE_LIMIT', message: 'Troppe richieste: rallenta un attimo.' });
         try {
           cb({ ok: true, ...fn(payload) });
         } catch (e) {
@@ -156,11 +157,21 @@ export function registerSocketHandlers(io) {
     on('game:roll', () => act(() => myTurn('roll'), game.doRoll));
     on('game:buy', () => act(() => myTurn('buy'), game.doBuy));
     on('game:pass', () => act(() => myTurn('buy'), game.doPass));
-    on('game:endTurn', () => act(() => myTurn('end'), (room) => game.endTurn(room)));
+    on('game:endTurn', () =>
+      act(
+        () => myTurn('end'),
+        (room) => game.endTurn(room),
+      ),
+    );
     on('game:payJail', () => act(() => myTurn('roll'), game.payJail));
     on('game:useJailCard', () => act(() => myTurn('roll'), game.useJailCard));
     // Case e ipoteche: solo nel proprio turno, non mentre si decide un acquisto.
-    on('game:manage', ({ action, cell }) => act(() => myTurn('roll', 'end'), (room, p) => game.manage(room, p, action, cell)));
+    on('game:manage', ({ action, cell }) =>
+      act(
+        () => myTurn('roll', 'end'),
+        (room, p) => game.manage(room, p, action, cell),
+      ),
+    );
 
     // --- Scambi -------------------------------------------------------------
     on('trade:propose', (offer) => act(ctx, (room, p) => game.proposeTrade(room, p, offer)));

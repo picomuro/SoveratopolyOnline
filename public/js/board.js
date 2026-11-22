@@ -16,8 +16,14 @@ import { UI } from './ui-config.js';
 export function cellRect(i) {
   const box = (x0, y0, x1, y1, side) => ({ x0, y0, x1, y1, side });
   const k = i % 10;
-  if (k === 0) { // angoli: VIA!, prigione, parcheggio, "In Prigione!"
-    const [x, y] = [[10, 10], [0, 10], [0, 0], [10, 0]][i / 10];
+  if (k === 0) {
+    // angoli: VIA!, prigione, parcheggio, "In Prigione!"
+    const [x, y] = [
+      [10, 10],
+      [0, 10],
+      [0, 0],
+      [10, 0],
+    ][i / 10];
     return box(BD[x], BD[y], BD[x + 1], BD[y + 1], 'corner');
   }
   if (i < 10) return box(BD[10 - k], BD[10], BD[11 - k], BD[11], 'bottom');
@@ -36,22 +42,28 @@ export function strip(r, t, outer, pad = 0) {
   else s[`${axis}1`] = s[`${axis}0`] + t;
   return s;
 }
-export const place = (el, r) => Object.assign(el.style, {
-  left: `${r.x0}%`, top: `${r.y0}%`, width: `${r.x1 - r.x0}%`, height: `${r.y1 - r.y0}%`,
-});
+export const place = (el, r) =>
+  Object.assign(el.style, {
+    left: `${r.x0}%`,
+    top: `${r.y0}%`,
+    width: `${r.x1 - r.x0}%`,
+    height: `${r.y1 - r.y0}%`,
+  });
 
 /** Posizione (in %) della k-esima di n pedine sulla stessa casella (fino a 8). */
 export function pawnSpot(i, k, n, inJail) {
   if (i === RULES.JAIL_CELL) {
-    if (inJail) return { x: 8.6 + (k % 3) * 2.6, y: 89.4 + Math.floor(k / 3) * 2.8 };  // dentro il riquadro arancione
-    return k < 4 ? { x: 3.3, y: 86.6 + k * 3 } : { x: 6.3 + (k - 4) * 2.6, y: 96.6 };   // lungo la fascia "Transito"
+    if (inJail) return { x: 8.6 + (k % 3) * 2.6, y: 89.4 + Math.floor(k / 3) * 2.8 }; // dentro il riquadro arancione
+    return k < 4 ? { x: 3.3, y: 86.6 + k * 3 } : { x: 6.3 + (k - 4) * 2.6, y: 96.6 }; // lungo la fascia "Transito"
   }
   const r = cellRect(i);
-  const cx = (r.x0 + r.x1) / 2, cy = (r.y0 + r.y1) / 2;
+  const cx = (r.x0 + r.x1) / 2,
+    cy = (r.y0 + r.y1) / 2;
   const tall = r.side === 'bottom' || r.side === 'top'; // casella alta e stretta: 2 colonne, altrimenti 4
   const cols = Math.min(n, tall ? 2 : 4);
   const rows = Math.ceil(n / cols);
-  const col = k % cols, row = Math.floor(k / cols);
+  const col = k % cols,
+    row = Math.floor(k / cols);
   return { x: cx + (col - (cols - 1) / 2) * 3.2, y: cy + (row - (rows - 1) / 2) * 3.2 };
 }
 
@@ -60,7 +72,12 @@ export const cellEls = [];
 export function buildCells() {
   if (cellEls.length) return;
   const layer = $('#cells-layer');
-  const add = (cls) => { const el = document.createElement('div'); el.className = cls; layer.appendChild(el); return el; };
+  const add = (cls) => {
+    const el = document.createElement('div');
+    el.className = cls;
+    layer.appendChild(el);
+    return el;
+  };
   CELLS.forEach((cell, i) => {
     const r = cellRect(i);
     const hit = add('cell-hit');
@@ -97,7 +114,8 @@ export function renderCells() {
     hit.classList.toggle('mortgaged', pr.mortgaged);
     mark.classList.toggle('hidden', !owner);
     if (owner) mark.style.background = owner.color;
-    houses.innerHTML = pr.houses === RULES.MAX_HOUSES ? '<span class="hotel"></span>' : '<span class="house"></span>'.repeat(pr.houses);
+    houses.innerHTML =
+      pr.houses === RULES.MAX_HOUSES ? '<span class="hotel"></span>' : '<span class="house"></span>'.repeat(pr.houses);
   });
 }
 
@@ -115,7 +133,10 @@ export function layoutPawns(activeId = null) {
       layer.appendChild(el);
       pawnEls[p.id] = el;
     }
-    if (shown[p.id] === undefined) { shown[p.id] = p.pos; shownJail[p.id] = p.inJail; }
+    if (shown[p.id] === undefined) {
+      shown[p.id] = p.pos;
+      shownJail[p.id] = p.inJail;
+    }
     pawnEls[p.id].classList.toggle('hidden', p.bankrupt);
     pawnEls[p.id].classList.toggle('active', p.id === activeId);
     if (p.bankrupt) continue;
@@ -131,7 +152,12 @@ export function layoutPawns(activeId = null) {
   }
   // Pedine di giocatori non più presenti
   for (const id of Object.keys(pawnEls)) {
-    if (!pl(id)) { pawnEls[id].remove(); delete pawnEls[id]; delete shown[id]; delete shownJail[id]; }
+    if (!pl(id)) {
+      pawnEls[id].remove();
+      delete pawnEls[id];
+      delete shown[id];
+      delete shownJail[id];
+    }
   }
 }
 
@@ -145,15 +171,21 @@ export function flash(el, cls, ms) {
 
 // ---------- Dadi 3D ----------
 export const PIPS = { 1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] }; // posizioni su griglia 3x3
-export const FACE_ROT = { 1: [0, 0], 2: [-90, 0], 3: [0, -90], 4: [0, 90], 5: [90, 0], 6: [0, 180] };             // rotazione che porta la faccia davanti
+export const FACE_ROT = { 1: [0, 0], 2: [-90, 0], 3: [0, -90], 4: [0, 90], 5: [90, 0], 6: [0, 180] }; // rotazione che porta la faccia davanti
 let dice = [];
 let spins = 0;
 /** Disegna le sei facce dei due dadi (una volta sola). */
 export function initDice() {
   dice = [$('#die1'), $('#die2')];
   for (const die of dice) {
-  die.innerHTML = Object.entries(PIPS).map(([n, pips]) => `<div class="face f${n}">${
-    pips.map((c) => `<span class="pip" style="grid-area:${Math.ceil(c / 3)}/${((c - 1) % 3) + 1}"></span>`).join('')}</div>`).join('');
+    die.innerHTML = Object.entries(PIPS)
+      .map(
+        ([n, pips]) =>
+          `<div class="face f${n}">${pips
+            .map((c) => `<span class="pip" style="grid-area:${Math.ceil(c / 3)}/${((c - 1) % 3) + 1}"></span>`)
+            .join('')}</div>`,
+      )
+      .join('');
   }
 }
 export function setDice(values) {
@@ -213,11 +245,18 @@ export async function playAnim(steps) {
 export function showCard(step) {
   return new Promise((resolve) => {
     const timer = setTimeout(closeModal, UI.CARD_AUTOCLOSE_MS);
-    openModal(`
+    openModal(
+      `
       <div class="head ${step.deck}">${step.deck === 'chance' ? '❓' : '🎁'} ${esc(step.title)}</div>
       <div class="text">${esc(step.text)}</div>
       <div class="note">${esc(step.note || '')}</div>
       <p class="who">${esc(pl(step.playerId)?.nickname || '')}</p>
-      <button class="btn btn-big btn-blue" data-close>OK!</button>`, 'game-card', () => { clearTimeout(timer); resolve(); });
+      <button class="btn btn-big btn-blue" data-close>OK!</button>`,
+      'game-card',
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+    );
   });
 }

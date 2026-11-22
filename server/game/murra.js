@@ -34,7 +34,13 @@ import { pay } from './money.js';
 const STAGE_MS = { choose: MURRA_CHOOSE_MS, offer: MURRA_OFFER_MS, play: MURRA_PICK_MS };
 
 /** a = chi lancia la sfida, b = lo sfidato (null finché non viene scelto). */
-export const newMurra = (kind, a, b, stake = 0, goal = kind === 'auction' ? RULES.MURRA_AUCTION_POINTS : RULES.MURRA_POINTS) => ({
+export const newMurra = (
+  kind,
+  a,
+  b,
+  stake = 0,
+  goal = kind === 'auction' ? RULES.MURRA_AUCTION_POINTS : RULES.MURRA_POINTS,
+) => ({
   kind,
   stake,
   a,
@@ -67,7 +73,10 @@ export function beginMurra(room) {
 function setMurraOpponent(room, opponent) {
   const m = room.murra;
   m.b = opponent.id;
-  log(room, `🤜 ${playerById(room, m.a).nickname} sfida ${opponent.nickname} a Murra: chi perde dà ${euro(m.stake)} a chi vince!`);
+  log(
+    room,
+    `🤜 ${playerById(room, m.a).nickname} sfida ${opponent.nickname} a Murra: chi perde dà ${euro(m.stake)} a chi vince!`,
+  );
   startMurraPlay(room);
 }
 
@@ -181,7 +190,11 @@ function resolveMurraRound(room) {
       cutShort,
     },
   ]);
-  const outcome = scorerId ? `punto a ${scorerId === m.a ? na : nb}` : hitA ? 'indovinano entrambi, nessun punto' : 'nessun punto';
+  const outcome = scorerId
+    ? `punto a ${scorerId === m.a ? na : nb}`
+    : hitA
+      ? 'indovinano entrambi, nessun punto'
+      : 'nessun punto';
   log(
     room,
     `🤜 Murra: ${na} mostra ${pa.fingers} e dice ${pa.guess}, ${nb} mostra ${pb.fingers} e dice ${pb.guess}. Somma ${sum}: ${outcome} (${sa}-${sb}).`,
@@ -261,7 +274,8 @@ export function playMurra(room, p, { fingers, guess, round }) {
   if (m.picks[p.id]) fail('BAD', "Hai già giocato: aspetta l'avversario.");
   const [f, g] = [Number(fingers), Number(guess)];
   if (!Number.isInteger(f) || f < 1 || f > MAX_FINGERS) fail('BAD', `Mostra da 1 a ${MAX_FINGERS} dita.`);
-  if (!Number.isInteger(g) || g < 2 || g > 2 * MAX_FINGERS) fail('BAD', `Dichiara una somma da 2 a ${2 * MAX_FINGERS}.`);
+  if (!Number.isInteger(g) || g < 2 || g > 2 * MAX_FINGERS)
+    fail('BAD', `Dichiara una somma da 2 a ${2 * MAX_FINGERS}.`);
   m.picks[p.id] = { fingers: f, guess: g };
   if (m.picks[m.a] && m.picks[m.b]) resolveMurraRound(room);
 }

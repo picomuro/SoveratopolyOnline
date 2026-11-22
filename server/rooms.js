@@ -57,15 +57,18 @@ export function baseNick(raw) {
     .replace(/[<>&"'`\\]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  return Array.from(text).slice(0, NICK_MAX).join('') || 'Giocatore'; // Array.from: non spezza le emoji
+  return firstChars(text, NICK_MAX) || 'Giocatore';
 }
+
+/** I primi n caratteri; Array.from non spezza le emoji a metà. */
+const firstChars = (text, n) => Array.from(text).slice(0, n).join('');
 
 /** Nickname unico nella stanza: ai doppioni si aggiunge un numero (Marco2, Marco3…). */
 function uniqueNick(raw, room) {
   const base = baseNick(raw);
   const taken = (nick) => room.players.some((p) => p.nickname.toLowerCase() === nick.toLowerCase());
   let nick = base;
-  for (let k = 2; taken(nick); k++) nick = `${Array.from(base).slice(0, NICK_MAX - 2).join('')}${k}`;
+  for (let k = 2; taken(nick); k++) nick = `${firstChars(base, NICK_MAX - 2)}${k}`;
   return nick;
 }
 
@@ -76,7 +79,8 @@ export const playerByNick = (room, raw) => {
 };
 
 export function addPlayer(room, nickname) {
-  if (room.players.length >= RULES.MAX_PLAYERS) fail('ROOM_FULL', `La stanza è piena (massimo ${RULES.MAX_PLAYERS} giocatori).`);
+  if (room.players.length >= RULES.MAX_PLAYERS)
+    fail('ROOM_FULL', `La stanza è piena (massimo ${RULES.MAX_PLAYERS} giocatori).`);
   const used = new Set(room.players.map((p) => p.color));
   const player = {
     id: crypto.randomUUID().slice(0, 8),

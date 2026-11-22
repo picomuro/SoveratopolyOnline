@@ -11,14 +11,14 @@
  */
 // Gruppi di colore: colore della fascia sul tabellone e costo di una casa.
 export const GROUPS = {
-  brown:     { name: 'Marroni',   color: '#8f5e4a', house: 50 },
-  lightblue: { name: 'Azzurre',   color: '#9fe8f5', house: 50 },
-  pink:      { name: 'Rosa',      color: '#ff6ac8', house: 100 },
-  orange:    { name: 'Arancioni', color: '#ff9a50', house: 100 },
-  red:       { name: 'Rosse',     color: '#f02020', house: 150 },
-  yellow:    { name: 'Gialle',    color: '#ffd84a', house: 150 },
-  green:     { name: 'Verdi',     color: '#00b860', house: 200 },
-  blue:      { name: 'Blu',       color: '#0047ab', house: 200 },
+  brown: { name: 'Marroni', color: '#8f5e4a', house: 50 },
+  lightblue: { name: 'Azzurre', color: '#9fe8f5', house: 50 },
+  pink: { name: 'Rosa', color: '#ff6ac8', house: 100 },
+  orange: { name: 'Arancioni', color: '#ff9a50', house: 100 },
+  red: { name: 'Rosse', color: '#f02020', house: 150 },
+  yellow: { name: 'Gialle', color: '#ffd84a', house: 150 },
+  green: { name: 'Verdi', color: '#00b860', house: 200 },
+  blue: { name: 'Blu', color: '#0047ab', house: 200 },
 };
 
 // type: go | prop | station | utility | tax | chance | chest | jail | parking | gotojail
@@ -74,17 +74,17 @@ export const RULES = {
   GO_SALARY: 200,
   JAIL_FINE: 50,
   JAIL_CELL: 10,
-  BASE_RENT_RATE: 0.08,                 // affitto base = 8% del prezzo
-  FULL_GROUP_MULT: 2,                   // gruppo completo, senza case
-  HOUSE_MULT: [0, 4, 11, 28, 36, 45],   // indice = numero di case (5 = albergo)
-  STATION_RENT: [0, 25, 50, 100, 200],  // per numero di "stazioni" possedute
-  UTILITY_MULT: [0, 4, 10],             // dadi x 4 (una) o x 10 (entrambe)
+  BASE_RENT_RATE: 0.08, // affitto base = 8% del prezzo
+  FULL_GROUP_MULT: 2, // gruppo completo, senza case
+  HOUSE_MULT: [0, 4, 11, 28, 36, 45], // indice = numero di case (5 = albergo)
+  STATION_RENT: [0, 25, 50, 100, 200], // per numero di "stazioni" possedute
+  UTILITY_MULT: [0, 4, 10], // dadi x 4 (una) o x 10 (entrambe)
   MAX_HOUSES: 5,
-  MURRA_POINTS: 3,                      // la Murra si vince a 3 punti...
-  MURRA_AUCTION_POINTS: 1,              // ...ma nelle aste basta il primo punto, per non rallentare il gioco
-  PARKING_MURRA_STAKE: 150,             // posta della sfida lanciata dal Parcheggio Gratuito
+  MURRA_POINTS: 3, // la Murra si vince a 3 punti...
+  MURRA_AUCTION_POINTS: 1, // ...ma nelle aste basta il primo punto, per non rallentare il gioco
+  PARKING_MURRA_STAKE: 150, // posta della sfida lanciata dal Parcheggio Gratuito
   MAX_PLAYERS: 8,
-  AUCTION_MIN_STEP: 10,                 // rilancio minimo in un'asta
+  AUCTION_MIN_STEP: 10, // rilancio minimo in un'asta
   CHAT_MAX_LENGTH: 120,
 };
 
@@ -97,7 +97,9 @@ export const FINGERS = ['☝️', '✌️', '🤟', '🖖', '🖐️'];
 
 // Indici delle caselle per gruppo, calcolati una volta sola.
 const byGroup = {};
-CELLS.forEach((c, i) => { if (c.group) (byGroup[c.group] = byGroup[c.group] || []).push(i); });
+CELLS.forEach((c, i) => {
+  if (c.group) (byGroup[c.group] = byGroup[c.group] || []).push(i);
+});
 
 export const euro = (n) => `${n} €`;
 export const isBuyable = (i) => ['prop', 'station', 'utility'].includes(CELLS[i]?.type);
@@ -117,7 +119,7 @@ export const auctionStart = (i) => Math.floor(CELLS[i].price / 2);
 
 // Bordi delle caselle sull'immagine del tabellone, in % (misurati sul PDF originale).
 // 12 valori: bordo esterno, fine angolo, 9 caselle, fine angolo, bordo esterno.
-export const BOUNDS = [1.2, 14.74, 22.40, 30.37, 38.10, 45.89, 53.69, 61.52, 69.28, 77.28, 85.08, 98.45];
+export const BOUNDS = [1.2, 14.74, 22.4, 30.37, 38.1, 45.89, 53.69, 61.52, 69.28, 77.28, 85.08, 98.45];
 
 /** Numero di caselle del tabellone. */
 export const BOARD_SIZE = CELLS.length;

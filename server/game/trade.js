@@ -63,7 +63,8 @@ export function proposeTrade(room, p, { to, giveProps, getProps, giveMoney, getM
     expires: Date.now() + TRADE_MS,
   };
   const items = (side) => side.props.length + side.cards;
-  if (!items(trade.give) && !items(trade.get)) fail('BAD', 'Lo scambio deve includere almeno una proprietà o una carta.');
+  if (!items(trade.give) && !items(trade.get))
+    fail('BAD', 'Lo scambio deve includere almeno una proprietà o una carta.');
   const [, other] = validateTrade(room, trade);
   room.trade = trade;
   room.tradeTimer = later(room, TRADE_MS, () => cancelTrade(room, `⌛ Lo scambio con ${other.nickname} è scaduto.`));

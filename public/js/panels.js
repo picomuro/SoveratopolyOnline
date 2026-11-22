@@ -4,7 +4,18 @@
 import { CELLS, RULES, euro } from '../shared/board-data.js';
 import * as S from '../shared/board-data.js';
 import { $, button, esc, openModal, row } from './dom.js';
-import { canManage, clockOffset, groupHasHouses, isMyTurn, meId, pl, propsOf, shown, shownJail, state } from './store.js';
+import {
+  canManage,
+  clockOffset,
+  groupHasHouses,
+  isMyTurn,
+  meId,
+  pl,
+  propsOf,
+  shown,
+  shownJail,
+  state,
+} from './store.js';
 import { send } from './net.js';
 import { buildCells, flash, layoutPawns, pawnEls, renderCells, setDice } from './board.js';
 import { renderMurraBox } from './murra.js';
@@ -68,17 +79,31 @@ export function renderActions() {
   if (state.auction) return renderAuctionBox(box);
   const { phase, pendingBuy } = state.turn;
   if (!isMyTurn()) {
-    const what = { roll: 'sta per tirare i dadi', buy: `decide se comprare ${CELLS[pendingBuy]?.name}`, end: 'sta gestendo le sue proprietà' }[phase];
-    box.insertAdjacentHTML('beforeend', `<div class="waiting">⏳ ${esc(pl(state.turn.playerId).nickname)} ${esc(what)}…</div>`);
+    const what = {
+      roll: 'sta per tirare i dadi',
+      buy: `decide se comprare ${CELLS[pendingBuy]?.name}`,
+      end: 'sta gestendo le sue proprietà',
+    }[phase];
+    box.insertAdjacentHTML(
+      'beforeend',
+      `<div class="waiting">⏳ ${esc(pl(state.turn.playerId).nickname)} ${esc(what)}…</div>`,
+    );
     return;
   }
   const me = pl(meId());
   if (phase === 'roll' && me.inJail) {
-    box.append(row(
-      button('🎲 Tenta il doppio', 'btn-blue', () => send('game:roll')),
-      button(`🔓 Paga ${euro(RULES.JAIL_FINE)}`, 'btn-yellow', () => send('game:payJail'), me.money < RULES.JAIL_FINE),
-      ...(me.jailCards ? [button('🃏 Usa la carta', 'btn-green', () => send('game:useJailCard'))] : []),
-    ));
+    box.append(
+      row(
+        button('🎲 Tenta il doppio', 'btn-blue', () => send('game:roll')),
+        button(
+          `🔓 Paga ${euro(RULES.JAIL_FINE)}`,
+          'btn-yellow',
+          () => send('game:payJail'),
+          me.money < RULES.JAIL_FINE,
+        ),
+        ...(me.jailCards ? [button('🃏 Usa la carta', 'btn-green', () => send('game:useJailCard'))] : []),
+      ),
+    );
   } else if (phase === 'roll') {
     box.append(button('🎲 Tira i dadi', 'btn-big btn-pink', () => send('game:roll')));
   } else if (phase === 'buy') {
@@ -88,10 +113,12 @@ export function renderActions() {
     card.innerHTML = `<div class="band" style="background:${S.colorOf(pendingBuy)}"></div>
       <div class="body"><div class="name">${esc(cell.name)}</div>
       <div>Prezzo <b>${euro(cell.price)}</b> · hai ${euro(me.money)}</div></div>`;
-    card.querySelector('.body').append(row(
-      button('🛒 Compra', 'btn-green', () => send('game:buy'), me.money < cell.price),
-      button('Passa', 'btn-ghost', () => send('game:pass')),
-    ));
+    card.querySelector('.body').append(
+      row(
+        button('🛒 Compra', 'btn-green', () => send('game:buy'), me.money < cell.price),
+        button('Passa', 'btn-ghost', () => send('game:pass')),
+      ),
+    );
     box.append(card);
   } else {
     box.append(button('✅ Fine turno', 'btn-big btn-blue', () => send('game:endTurn')));
@@ -110,11 +137,18 @@ export function renderAuctionBox(box) {
   card.className = 'buy-card auction';
   card.innerHTML = `<div class="band" style="background:${S.colorOf(a.cell)}"></div>
     <div class="body"><div class="name">🔨 ${esc(CELLS[a.cell].name)}</div>
-    <div>${leader
-      ? `Offerta più alta: <b>${euro(a.bid)}</b> di <b style="color:${leader.color}">${esc(leader.nickname)}</b>`
-      : `Nessuna offerta: si parte da <b>${euro(S.auctionStart(a.cell))}</b>`}</div>
+    <div>${
+      leader
+        ? `Offerta più alta: <b>${euro(a.bid)}</b> di <b style="color:${leader.color}">${esc(leader.nickname)}</b>`
+        : `Nessuna offerta: si parte da <b>${euro(S.auctionStart(a.cell))}</b>`
+    }</div>
     <div class="who">Prezzo di listino ${euro(CELLS[a.cell].price)} · ${
-      winning ? `stai vincendo tu! 🎉${a.challengerId ? ' Ma può sfidarti a Murra…' : ''}` : out ? 'sei fuori da questa asta' : `hai ${euro(me.money)}`}</div></div>`;
+      winning
+        ? `stai vincendo tu! 🎉${a.challengerId ? ' Ma può sfidarti a Murra…' : ''}`
+        : out
+          ? 'sei fuori da questa asta'
+          : `hai ${euro(me.money)}`
+    }</div></div>`;
   if (!winning && !out) {
     // Rilanci rapidi: +10, +50, +100 sull'offerta in corso; senza offerte, base d'asta, +50, +100
     const raises = leader
@@ -123,7 +157,9 @@ export function renderAuctionBox(box) {
     card.querySelector('.body').append(
       row(...raises.map((v) => button(euro(v), 'btn-green', () => send('auction:bid', { amount: v }), v > me.money))),
       // Asta rimasta a due: invece di rilanciare si può sfidare a Murra chi ha fatto l'offerta
-      ...(a.challengerId === me.id ? [button(`🤜 Sfida a Murra per comprarla a ${euro(a.bid)}`, 'btn-pink', () => send('auction:murra'))] : []),
+      ...(a.challengerId === me.id
+        ? [button(`🤜 Sfida a Murra per comprarla a ${euro(a.bid)}`, 'btn-pink', () => send('auction:murra'))]
+        : []),
       button('Mi ritiro', 'btn-ghost', () => send('auction:pass')),
     );
   }
@@ -133,15 +169,21 @@ export function renderAuctionBox(box) {
 export function renderPlayers(prev) {
   const ul = $('#players');
   const tradeOpen = canManage() && !state.trade;
-  ul.innerHTML = state.players.map((p) => `
+  ul.innerHTML = state.players
+    .map(
+      (p) => `
     <li data-id="${p.id}" class="${state.turn?.playerId === p.id ? 'current' : ''} ${p.bankrupt ? 'bankrupt' : ''}">
       <span class="dot" style="background:${p.color}"></span>
       <span class="name">${esc(p.nickname)}${p.id === meId() ? ' (tu)' : ''}
         <span class="tag">${p.id === state.hostId ? '👑' : ''}${p.inJail ? ' 🔒' : ''}${p.connected ? '' : ' 📴'}${p.bankrupt ? ' ☠️' : ''}${p.jailCards ? ' 🃏' : ''}</span></span>
       <span class="money">${euro(p.money)}</span>
       ${tradeOpen && p.id !== meId() && !p.bankrupt ? `<button class="btn btn-yellow btn-small" data-trade="${p.id}" title="Proponi uno scambio" aria-label="Proponi uno scambio a ${esc(p.nickname)}">🤝</button>` : ''}
-    </li>`).join('');
-  ul.querySelectorAll('[data-trade]').forEach((b) => { b.onclick = () => openTrade(b.dataset.trade); });
+    </li>`,
+    )
+    .join('');
+  ul.querySelectorAll('[data-trade]').forEach((b) => {
+    b.onclick = () => openTrade(b.dataset.trade);
+  });
   // Variazione di soldi (+200, -50...) rispetto allo stato precedente della stessa partita
   if (prev?.phase !== 'playing') return;
   for (const p of state.players) {
@@ -159,15 +201,27 @@ export function renderMyProps() {
   const box = $('#my-props');
   const mine = propsOf(meId());
   box.innerHTML = mine.length ? '' : '<div class="empty">Nessuna proprietà… ancora! 🏝️</div>';
-  box.insertAdjacentHTML('beforeend', '<div class="prop-row"><span class="pn">🃏 Esci di prigione<small>carta da usare o scambiare</small></span></div>'
-    .repeat(pl(meId()).jailCards));
+  box.insertAdjacentHTML(
+    'beforeend',
+    '<div class="prop-row"><span class="pn">🃏 Esci di prigione<small>carta da usare o scambiare</small></span></div>'.repeat(
+      pl(meId()).jailCards,
+    ),
+  );
   const can = canManage();
   const me = pl(meId());
   for (const i of mine) {
     const cell = CELLS[i];
     const pr = state.props[i];
     const fullGroup = cell.type === 'prop' && S.groupOf(i).every((c) => state.props[c].owner === me.id);
-    const info = pr.mortgaged ? 'ipotecata' : pr.houses === RULES.MAX_HOUSES ? '🏨 albergo' : pr.houses ? `🏠 × ${pr.houses}` : fullGroup ? 'gruppo completo!' : '';
+    const info = pr.mortgaged
+      ? 'ipotecata'
+      : pr.houses === RULES.MAX_HOUSES
+        ? '🏨 albergo'
+        : pr.houses
+          ? `🏠 × ${pr.houses}`
+          : fullGroup
+            ? 'gruppo completo!'
+            : '';
     const el = document.createElement('div');
     el.className = `prop-row${pr.mortgaged ? ' mort' : ''}`;
     el.innerHTML = `<span class="sw" style="background:${S.colorOf(i)}"></span>
@@ -179,10 +233,13 @@ export function renderMyProps() {
       b.setAttribute('aria-label', `${title}: ${cell.name}`);
       el.querySelector('.ops').append(b);
     };
-    if (fullGroup && !pr.mortgaged && pr.houses < RULES.MAX_HOUSES) op('+🏠', 'build', 'btn-green', `Costruisci (${euro(S.houseCost(i))})`, me.money >= S.houseCost(i));
+    if (fullGroup && !pr.mortgaged && pr.houses < RULES.MAX_HOUSES)
+      op('+🏠', 'build', 'btn-green', `Costruisci (${euro(S.houseCost(i))})`, me.money >= S.houseCost(i));
     if (pr.houses > 0) op('−🏠', 'sell', 'btn-yellow', `Vendi casa (+${euro(S.houseSellValue(i))})`);
-    if (!pr.mortgaged && !groupHasHouses(i)) op('🏦', 'mortgage', 'btn-ghost', `Ipoteca (+${euro(S.mortgageValue(i))})`);
-    if (pr.mortgaged) op('✨', 'unmortgage', 'btn-blue', `Riscatta (-${euro(S.unmortgageCost(i))})`, me.money >= S.unmortgageCost(i));
+    if (!pr.mortgaged && !groupHasHouses(i))
+      op('🏦', 'mortgage', 'btn-ghost', `Ipoteca (+${euro(S.mortgageValue(i))})`);
+    if (pr.mortgaged)
+      op('✨', 'unmortgage', 'btn-blue', `Riscatta (-${euro(S.unmortgageCost(i))})`, me.money >= S.unmortgageCost(i));
     box.append(el);
   }
 }
@@ -192,7 +249,8 @@ export function showCellInfo(i) {
   const cell = CELLS[i];
   const pr = state?.props[i];
   const owner = pr?.owner && pl(pr.owner);
-  const table = (rows) => `<table class="info-table">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>`;
+  const table = (rows) =>
+    `<table class="info-table">${rows.map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`).join('')}</table>`;
   let details = '';
   if (cell.type === 'prop') {
     details = table([
@@ -206,7 +264,10 @@ export function showCellInfo(i) {
   } else if (cell.type === 'station') {
     details = table([1, 2, 3, 4].map((n) => [`Con ${n} stazion${n === 1 ? 'e' : 'i'}`, euro(RULES.STATION_RENT[n])]));
   } else if (cell.type === 'utility') {
-    details = table([['Con una', `dadi × ${RULES.UTILITY_MULT[1]}`], ['Con entrambe', `dadi × ${RULES.UTILITY_MULT[2]}`]]);
+    details = table([
+      ['Con una', `dadi × ${RULES.UTILITY_MULT[1]}`],
+      ['Con entrambe', `dadi × ${RULES.UTILITY_MULT[2]}`],
+    ]);
   }
   const desc = {
     go: `Ogni volta che passi dal VIA! ritiri ${euro(RULES.GO_SALARY)}.`,
@@ -236,7 +297,11 @@ export function renderVictory() {
   ov.classList.toggle('show', finished);
   if (!finished) return;
   const w = state.winnerId && pl(state.winnerId);
-  $('#victory-title').textContent = !w ? 'Partita finita' : w.id === meId() ? 'Hai vinto! 🎉' : `${w.nickname} ha vinto!`;
+  $('#victory-title').textContent = !w
+    ? 'Partita finita'
+    : w.id === meId()
+      ? 'Hai vinto! 🎉'
+      : `${w.nickname} ha vinto!`;
   $('#victory-sub').textContent = w ? `Il re di Soverato chiude con ${euro(w.money)} 🤑` : '';
   confetti();
 }

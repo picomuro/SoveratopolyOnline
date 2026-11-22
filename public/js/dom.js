@@ -4,7 +4,8 @@
 import { UI } from './ui-config.js';
 
 export const $ = (sel) => document.querySelector(sel);
-export const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+export const esc = (s) =>
+  String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- Modale generica ----------

@@ -115,7 +115,10 @@ export function land(room, p, anim, diceSum, cardDepth = 0, special = {}) {
         room.lastDice = d;
         anim.push({ t: 'dice', dice: d });
         rent = (d[0] + d[1]) * special.rollForRent;
-        log(room, `🎲 ${p.nickname} tira ${d[0]} + ${d[1]} per l'affitto: paga ${special.rollForRent} volte il risultato.`);
+        log(
+          room,
+          `🎲 ${p.nickname} tira ${d[0]} + ${d[1]} per l'affitto: paga ${special.rollForRent} volte il risultato.`,
+        );
       }
       pay(room, p, playerById(room, pr.owner), rent, `l'affitto di ${cell.name}`);
       break;

@@ -5,7 +5,18 @@
 export { GameError, fail } from './errors.js';
 export { setOutput } from './output.js';
 export { setRandom } from './random.js';
-export { newRoomState, freshStats, publicState, playerById, current, alive, connectedCount, isCurrent, fixHost, log } from './state.js';
+export {
+  newRoomState,
+  freshStats,
+  publicState,
+  playerById,
+  current,
+  alive,
+  connectedCount,
+  isCurrent,
+  fixHost,
+  log,
+} from './state.js';
 export { startGame, endTurn } from './turns.js';
 export { doRoll, doBuy, payJail, useJailCard, calcRent } from './board.js';
 export { pay, bankrupt } from './money.js';

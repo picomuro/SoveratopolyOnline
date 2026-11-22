@@ -9,8 +9,11 @@ import { fail } from './errors.js';
 
 /** Riduce il messaggio a una sola riga di lunghezza limitata, senza toccarne le parole. */
 export function cleanChat(raw) {
-  // eslint-disable-next-line no-control-regex -- i caratteri di controllo vanno tolti di proposito
-  const oneLine = String(raw ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim();
+  const oneLine = String(raw ?? '')
+    // eslint-disable-next-line no-control-regex -- i caratteri di controllo vanno tolti di proposito
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   return Array.from(oneLine).slice(0, RULES.CHAT_MAX_LENGTH).join('');
 }
 
