@@ -6,6 +6,8 @@
  * Tutto lo stato è in memoria: un riavvio cancella le stanze.
  */
 const express = require('express');
+const helmet = require('helmet');
+const compression = require('compression');
 const http = require('http');
 const path = require('path');
 const crypto = require('crypto');
@@ -15,12 +17,31 @@ const { CELLS, RULES, REACTIONS, euro } = B;
 
 const PORT = process.env.PORT || 3000;
 const HOST = '0.0.0.0';
+// Origini (oltre a quella del sito stesso) da cui si accettano connessioni Socket.IO, separate da virgola.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map((o) => o.trim()).filter(Boolean);
 
 // ---------------------------------------------------------------------------
 // HTTP
 // ---------------------------------------------------------------------------
 const app = express();
 app.disable('x-powered-by');
+// Header di sicurezza. La CSP ammette solo risorse proprie, più il font di Google Fonts;
+// gli stili inline servono per colori e posizioni calcolati dal client.
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      'default-src': ["'self'"],
+      'script-src': ["'self'"],
+      'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+      'font-src': ["'self'", 'https://fonts.gstatic.com'],
+      'img-src': ["'self'", 'data:'],
+      'connect-src': ["'self'", 'ws:', 'wss:'],
+      'frame-ancestors': ["'self'"],
+      'upgrade-insecure-requests': null, // Render serve già in HTTPS; in locale si usa HTTP
+    },
+  },
+}));
+app.use(compression()); // gzip per HTML, CSS e JS: su rete mobile si sente
 app.get('/health', (_req, res) => res.status(200).send('ok')); // health check di Render
 app.use(express.static(path.join(__dirname, 'public'), {
   // Codice sempre rivalidato (dopo un deploy client e server restano allineati), immagini in cache.
@@ -29,7 +50,18 @@ app.use(express.static(path.join(__dirname, 'public'), {
 
 const server = http.createServer(app);
 // Messaggi piccoli: nessun evento del gioco supera pochi KB.
-const io = new Server(server, { pingInterval: 20000, pingTimeout: 20000, maxHttpBufferSize: 16 * 1024 });
+const io = new Server(server, {
+  pingInterval: 20000,
+  pingTimeout: 20000,
+  maxHttpBufferSize: 16 * 1024,
+  // Solo pagine dello stesso sito (o di ALLOWED_ORIGINS). I client senza Origin (script, test) passano.
+  allowRequest: (req, cb) => {
+    const { origin } = req.headers;
+    let sameSite = false;
+    try { sameSite = new URL(origin).host === req.headers.host; } catch { /* origine non valida */ }
+    cb(null, !origin || sameSite || ALLOWED_ORIGINS.includes(origin));
+  },
+});
 
 // ---------------------------------------------------------------------------
 // Costanti
@@ -1444,3 +1476,12 @@ setInterval(() => {
 }, CLEANUP_EVERY_MS);
 
 server.listen(PORT, HOST, () => console.log(`Soveratopoly in ascolto su http://${HOST}:${PORT}`));
+
+// Render manda SIGTERM a ogni deploy: chiude le connessioni in modo ordinato (le partite in memoria si perdono comunque).
+function shutdown(signal) {
+  console.log(`${signal}: chiusura del server`);
+  io.close(() => process.exit(0));
+  setTimeout(() => process.exit(0), 5000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
