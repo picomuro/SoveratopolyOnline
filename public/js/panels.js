@@ -139,7 +139,7 @@ export function renderPlayers(prev) {
       <span class="name">${esc(p.nickname)}${p.id === meId() ? ' (tu)' : ''}
         <span class="tag">${p.id === state.hostId ? '👑' : ''}${p.inJail ? ' 🔒' : ''}${p.connected ? '' : ' 📴'}${p.bankrupt ? ' ☠️' : ''}${p.jailCards ? ' 🃏' : ''}</span></span>
       <span class="money">${euro(p.money)}</span>
-      ${tradeOpen && p.id !== meId() && !p.bankrupt ? `<button class="btn btn-yellow btn-small" data-trade="${p.id}" title="Proponi uno scambio">🤝</button>` : ''}
+      ${tradeOpen && p.id !== meId() && !p.bankrupt ? `<button class="btn btn-yellow btn-small" data-trade="${p.id}" title="Proponi uno scambio" aria-label="Proponi uno scambio a ${esc(p.nickname)}">🤝</button>` : ''}
     </li>`).join('');
   ul.querySelectorAll('[data-trade]').forEach((b) => { b.onclick = () => openTrade(b.dataset.trade); });
   // Variazione di soldi (+200, -50...) rispetto allo stato precedente della stessa partita
@@ -176,6 +176,7 @@ export function renderMyProps() {
     const op = (label, action, cls, title, affordable = true) => {
       const b = button(label, cls, () => send('game:manage', { action, cell: i }), !can || !affordable);
       b.title = title;
+      b.setAttribute('aria-label', `${title}: ${cell.name}`);
       el.querySelector('.ops').append(b);
     };
     if (fullGroup && !pr.mortgaged && pr.houses < RULES.MAX_HOUSES) op('+🏠', 'build', 'btn-green', `Costruisci (${euro(S.houseCost(i))})`, me.money >= S.houseCost(i));

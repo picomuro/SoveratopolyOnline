@@ -66,7 +66,16 @@ export function buildCells() {
     const hit = add('cell-hit');
     place(hit, r);
     hit.title = cell.name;
+    // Casella usabile anche da tastiera: Invio o spazio aprono le informazioni.
+    hit.tabIndex = 0;
+    hit.setAttribute('role', 'button');
+    hit.setAttribute('aria-label', cell.name);
     hit.onclick = () => showCellInfo(i);
+    hit.onkeydown = (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      showCellInfo(i);
+    };
     cellEls[i] = { hit };
     if (!S.isBuyable(i)) return;
     // Il segno del proprietario va sul lato esterno (sopra il prezzo), le case sulla fascia colorata.

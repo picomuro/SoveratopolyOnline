@@ -97,6 +97,8 @@ input:focus { border-color: var(--blue); }
 #cells-layer, #pawns-layer, #reaction-layer { position: absolute; inset: 0; pointer-events: none; }
 .cell-hit { position: absolute; pointer-events: auto; cursor: pointer; border-radius: 2px; }
 .cell-hit:hover { background: rgba(255,255,255,.18); }
+.cell-hit:focus-visible { outline: 3px solid #2f80ff; outline-offset: -2px; }
+.modal-box:focus { outline: none; }
 .cell-hit.mortgaged { background: repeating-linear-gradient(45deg, rgba(40,40,60,.45) 0 6px, rgba(40,40,60,.25) 6px 12px); }
 .cell-hit.highlight { animation: glow 1s ease-in-out infinite alternate; }
 .owner-mark { position: absolute; border: .25cqw solid #fff; border-radius: .6cqw; box-shadow: 0 0 0 .2cqw rgba(0,0,0,.35); }

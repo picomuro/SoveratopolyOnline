@@ -14,13 +14,16 @@ export function fireModalClose() {
   onModalClose = null;
   if (f) f();
 }
+let focusBeforeModal = null;
 export function openModal(html, cls = '', onClose = null) {
   fireModalClose(); // la finestra precedente, se c'era, viene sostituita
   const box = $('#modal-box');
   box.className = `modal-box ${cls}`;
   box.innerHTML = html;
   onModalClose = onClose;
+  if (!$('#modal').classList.contains('show')) focusBeforeModal = document.activeElement;
   $('#modal').classList.add('show');
+  box.focus(); // tastiera e lettori di schermo partono dalla finestra
 }
 /** Chiusura con clic fuori dalla finestra, sui pulsanti [data-close] o con il tasto Esc. */
 export function initModal() {
@@ -34,6 +37,8 @@ export function initModal() {
 export function closeModal() {
   $('#modal').classList.remove('show');
   fireModalClose();
+  focusBeforeModal?.focus?.(); // il focus torna dov'era prima dell'apertura
+  focusBeforeModal = null;
 }
 
 // ---------- Toast ----------
