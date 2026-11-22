@@ -26,7 +26,7 @@ export const emitAnim = (room, steps) => {
  * Al termine invia lo stato aggiornato.
  */
 export function later(room, ms, fn) {
-  return setTimeout(() => {
+  const timer = setTimeout(() => {
     if (room.closed) return;
     try {
       fn();
@@ -35,4 +35,6 @@ export function later(room, ms, fn) {
     }
     broadcast(room);
   }, ms);
+  timer.unref?.(); // i timer di gioco da soli non tengono acceso il processo (a quello pensa il server)
+  return timer;
 }
