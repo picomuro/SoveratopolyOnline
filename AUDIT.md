@@ -48,7 +48,7 @@ vulnerabilità.
 
 ## 2. Problemi trovati
 
-Totale: **0 critici, 3 alti, 9 medi, 11 bassi**.
+Totale: **0 critici, 3 alti, 10 medi, 11 bassi** (M10 trovato durante il refactoring).
 
 ### Critico
 
@@ -75,6 +75,7 @@ Nessun problema critico: non ci sono modi per barare, né falle che espongano da
 | M7  | `public/game.js` intero                       | Il client è un'unica funzione da 1006 righe che legge i dati da una variabile globale (`window.SOVERATO`).                                                                                                                                         | Difficile da mantenere; dipendenze implicite.                                      | ES modules: connessione, tabellone, pannelli, chat e finestre in file separati che importano `shared/board-data.js`. |
 | M8  | `server.js:841-863`                           | Se chi deve scegliere l'avversario (Parcheggio/carta) o accettare la sfida (asta) si disconnette **dopo** l'inizio della fase, gli altri aspettano comunque tutti i 20 o 15 secondi. Per le mosse normali invece il tempo si accorcia.             | Attese inutili.                                                                    | Alla disconnessione di chi deve decidere nella Murra, la fase viene chiusa subito come tempo scaduto.                |
 | M9  | `public/index.html`, `public/game.js:952-966` | Accessibilità: la finestra modale non ha `role="dialog"`/`aria-modal`, non si chiude con Esc e non riceve il focus; i pulsanti fatti solo di emoji (🤝, 🏦, ✨, ➤) hanno al massimo un `title`.                                                    | Difficile da usare con tastiera e lettori di schermo.                              | Ruoli ARIA, chiusura con Esc, focus sulla finestra, `aria-label` sui pulsanti con sole emoji.                        |
+| M10 | `server.js:768`, `:858`, `:1177`              | I callback dei timer (asta, Murra, scambi, avvisi) non hanno try/catch: un'eccezione imprevista in un timer fa cadere il processo Node.                                                                                                            | Su Render il processo riparte, ma **tutte** le partite in memoria si perdono.      | Un unico aiuto per i timer delle stanze che ignora le stanze chiuse e registra gli errori invece di propagarli.      |
 
 ### Basso
 
@@ -102,4 +103,49 @@ Nessuna regola è stata cambiata. Punti da confermare con l'autore del gioco:
 
 ## 4. Stato delle correzioni
 
-_Aggiornato al termine del refactoring._
+Aggiornato al termine del refactoring (branch `refactor/audit-and-cleanup`).
+
+| #   | Stato         | Come                                                                                                                                                       |
+| --- | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1  | ✅ Risolto    | Secchiello di gettoni per connessione (20 eventi, poi 10/s) e limiti per IP: 40 connessioni, 20 stanze create, 60 ingressi al minuto (`server/limits.js`). |
+| A2  | ✅ Risolto    | Stesso limite per IP su `room:join` e `room:rejoin`: provare tutti i codici richiederebbe giorni.                                                          |
+| A3  | ✅ Risolto    | `maxHttpBufferSize` 16 KB; array degli scambi tagliati al numero di caselle.                                                                               |
+| M1  | ⏸ Non risolto | Scelta voluta del proprietario (rientro con il nickname). Passo successivo consigliato: un PIN facoltativo scelto all'ingresso.                            |
+| M2  | ✅ Risolto    | `murra:play` porta il numero della mano (`round`); le giocate di un'altra mano sono rifiutate.                                                             |
+| M3  | ✅ Risolto    | Gli scambi si accettano solo nelle fasi `roll`/`end`; rifiutare resta sempre possibile. Il client disattiva "Accetta" con una spiegazione.                 |
+| M4  | ✅ Risolto    | `helmet` con CSP (risorse proprie + Google Fonts), nosniff, frame-ancestors, HSTS.                                                                         |
+| M5  | ✅ Risolto    | `server/` (rete, stanze, limiti, configurazione) e `server/game/` (regole senza rete, uscite iniettate da `output.js`).                                    |
+| M6  | ✅ Risolto    | ESLint, Prettier, `.editorconfig`, 40 test con `node:test` (34 unitari, 6 di integrazione) e `npm run simulate`.                                           |
+| M7  | ✅ Risolto    | Client in moduli ES (`public/js/`), dati condivisi importati da `shared/board-data.js`.                                                                    |
+| M8  | ✅ Risolto    | Se chi deve decidere nella Murra resta scollegato per 5 secondi, il server decide subito al suo posto.                                                     |
+| M9  | ✅ Risolto    | Finestra con `role="dialog"`, focus gestito, chiusura con Esc; caselle usabili da tastiera; `aria-label` sui pulsanti con sole emoji; avvisi `aria-live`.  |
+| M10 | ✅ Risolto    | `later()` in `server/game/output.js`: i timer ignorano le stanze chiuse e registrano gli errori senza far cadere il processo.                              |
+| B1  | ✅ Risolto    | Middleware `compression` (gzip).                                                                                                                           |
+| B2  | ✅ Risolto    | `render.yaml`: `npm ci --omit=dev`.                                                                                                                        |
+| B3  | ✅ Risolto    | `normCode()` unica per `room:join` e `room:rejoin`.                                                                                                        |
+| B4  | ✅ Risolto    | Commento corretto; nickname gestiti in `server/rooms.js`.                                                                                                  |
+| B5  | ✅ Risolto    | Tempi del client in `public/js/ui-config.js`, del server in `server/config.js`.                                                                            |
+| B6  | ✅ Risolto    | `SIGTERM`/`SIGINT` chiudono Socket.IO e HTTP in modo ordinato.                                                                                             |
+| B7  | ✅ Risolto    | Connessioni Socket.IO solo dalla stessa origine o da `ALLOWED_ORIGINS`.                                                                                    |
+| B8  | ⏸ Non risolto | Lo stato completo pesa pochi KB e semplifica molto il client; inviare solo le differenze non vale la complessità a questa scala.                           |
+| B9  | ⏸ Non risolto | Convertire l'immagine in WebP richiede strumenti esterni; il guadagno (~120 KB, solo al primo caricamento) è modesto.                                      |
+| B10 | ⏸ Non risolto | Express 5 cambia API senza benefici per questo progetto; nessuna vulnerabilità nota nella 4.                                                               |
+| B11 | ⏸ Non risolto | Il font Google fa parte dell'aspetto grafico; ospitarlo in locale è un possibile passo successivo.                                                         |
+
+### Modifiche di comportamento (da verificare a mano)
+
+- **Scambi**: chi riceve una proposta non può più accettarla mentre è in corso un acquisto, un'asta o una Murra (può
+  sempre rifiutarla). Prima poteva, con effetti strani sulle aste.
+- **Murra**: chi deve scegliere, accettare o giocare e resta scollegato per più di 5 secondi viene sostituito dal
+  server (prima si aspettavano fino a 15-20 secondi).
+- **Finestre**: si chiudono anche con il tasto Esc.
+- **Limiti di frequenza**: un client che invia più di 20 azioni di fila (poi 10 al secondo) riceve "Troppe richieste";
+  da un giocatore umano non succede, ma va tenuto presente per eventuali bot.
+
+### Verifiche eseguite
+
+- `npm run lint` e `npm run format:check` puliti; `npm test`: 40 test superati.
+- `npm run simulate`: partite complete con 2, 4 e 8 bot finite senza incoerenze né errori del server.
+- Prova nel browser (server locale): lobby, sala d'attesa, chat (l'HTML compare come testo), partita, carte, acquisti,
+  finestre, scambi, apertura delle caselle da tastiera, rientro dopo ricarica della pagina; nessun errore in console e
+  nessuna violazione della Content-Security-Policy.
