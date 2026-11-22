@@ -84,7 +84,7 @@
     MURRA_POINTS: 3,                      // la Murra si vince a 3 punti
     PARKING_MURRA_STAKE: 150,             // posta della sfida lanciata dal Parcheggio Gratuito
     MAX_PLAYERS: 8,
-    AUCTION_MIN_STEP: 10,                 // rilancio minimo (e prima offerta) in un'asta
+    AUCTION_MIN_STEP: 10,                 // rilancio minimo in un'asta
     CHAT_MAX_LENGTH: 120,
   };
 
@@ -112,6 +112,8 @@
   const houseSellValue = (i) => Math.floor(houseCost(i) / 2);
   const mortgageValue = (i) => Math.floor(CELLS[i].price / 2);
   const unmortgageCost = (i) => Math.ceil(mortgageValue(i) * 1.1);
+  /** Base d'asta: la prima offerta deve valere almeno metà del prezzo di listino. */
+  const auctionStart = (i) => Math.floor(CELLS[i].price / 2);
 
   // Bordi delle caselle sull'immagine del tabellone, in % (misurati sul PDF originale).
   // 12 valori: bordo esterno, fine angolo, 9 caselle, fine angolo, bordo esterno.
@@ -119,7 +121,7 @@
 
   const api = {
     GROUPS, CELLS, RULES, REACTIONS, FINGERS, BOUNDS,
-    euro, isBuyable, groupOf, colorOf, propRent, houseCost, houseSellValue, mortgageValue, unmortgageCost,
+    euro, isBuyable, groupOf, colorOf, propRent, houseCost, houseSellValue, mortgageValue, unmortgageCost, auctionStart,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.SOVERATO = api;

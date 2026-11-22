@@ -30,7 +30,7 @@ render.yaml          Blueprint per Render
 - Ognuno parte con **1500 €** dal VIA!. Passando dal VIA! si ritirano **200 €**.
 - Si tirano 2 dadi e si avanza in senso orario.
 - **Proprietà libera**: puoi comprarla al prezzo indicato, oppure rinunciare.
-- **Asta**: se rinunci (o scade il tempo), la proprietà va all'asta tra tutti i giocatori ancora in gioco, te compreso. Si parte da 10 € e si rilancia di almeno 10 €: ci sono 15 secondi per la prima offerta e 10 secondi dopo ogni rilancio. Chi si ritira non può rientrare. Vince l'offerta più alta; se nessuno offre, la proprietà resta libera.
+- **Asta**: se rinunci (o scade il tempo), la proprietà va all'asta tra tutti i giocatori ancora in gioco, te compreso. Si parte da metà del prezzo di listino (es. 100 € per una proprietà da 200 €) e si rilancia di almeno 10 €: ci sono 15 secondi per la prima offerta e 10 secondi dopo ogni rilancio. Chi si ritira non può rientrare. Vince l'offerta più alta; se nessuno offre, la proprietà resta libera.
 - **Proprietà di un altro**: paghi l'affitto.
   - Via (affitto base = 8% del prezzo): l'affitto raddoppia se il proprietario ha tutto il gruppo di colore. Con case e albergo vale ×4, ×11, ×28, ×36 e ×45.
   - Stazioni (Passaggio a Livello, Stazione degli Autobus, Stazione dei Treni, Marcello): 25, 50, 100 o 200 € in base a quante ne possiede il proprietario.

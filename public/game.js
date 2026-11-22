@@ -573,11 +573,14 @@
       <div class="body"><div class="name">🔨 ${esc(CELLS[a.cell].name)}</div>
       <div>${leader
         ? `Offerta più alta: <b>${euro(a.bid)}</b> di <b style="color:${leader.color}">${esc(leader.nickname)}</b>`
-        : `Nessuna offerta: si parte da <b>${euro(RULES.AUCTION_MIN_STEP)}</b>`}</div>
+        : `Nessuna offerta: si parte da <b>${euro(S.auctionStart(a.cell))}</b>`}</div>
       <div class="who">Prezzo di listino ${euro(CELLS[a.cell].price)} · ${
         winning ? `stai vincendo tu! 🎉${a.challengerId ? ' Ma può sfidarti a Murra…' : ''}` : out ? 'sei fuori da questa asta' : `hai ${euro(me.money)}`}</div></div>`;
     if (!winning && !out) {
-      const raises = [1, 5, 10].map((k) => a.bid + k * RULES.AUCTION_MIN_STEP); // rilanci rapidi: +10, +50, +100
+      // Rilanci rapidi: +10, +50, +100 sull'offerta in corso; senza offerte, base d'asta, +50, +100
+      const raises = leader
+        ? [1, 5, 10].map((k) => a.bid + k * RULES.AUCTION_MIN_STEP)
+        : [0, 5, 10].map((k) => S.auctionStart(a.cell) + k * RULES.AUCTION_MIN_STEP);
       card.querySelector('.body').append(
         row(...raises.map((v) => button(euro(v), 'btn-green', () => send('auction:bid', { amount: v }), v > me.money))),
         // Asta rimasta a due: invece di rilanciare si può sfidare a Murra chi ha fatto l'offerta

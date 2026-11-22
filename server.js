@@ -674,7 +674,7 @@ function bankrupt(room, p, creditor) {
   p.jailCards = []; // senza creditore tornano nei mazzi al prossimo rimescolamento
   log(room, `☠️ ${p.nickname} è in bancarotta! ${creditor ? `Le sue proprietà vanno a ${creditor.nickname}.` : 'Le sue proprietà tornano libere.'}`);
   if (room.trade && [room.trade.from, room.trade.to].includes(p.id)) cancelTrade(room);
-  if (room.auction?.bidderId === p.id) Object.assign(room.auction, { bid: 0, bidderId: null }); // l'asta riparte da zero
+  if (room.auction?.bidderId === p.id) Object.assign(room.auction, { bid: 0, bidderId: null }); // l'asta riparte dalla base d'asta
   checkWinner(room);
 }
 
@@ -719,7 +719,10 @@ function doPass(room, p) {
 // Aste: partecipano tutti i giocatori ancora in gioco, compreso chi ha rinunciato.
 // Si rilancia liberamente; a ogni offerta il tempo riparte. Vince l'offerta più alta.
 // ---------------------------------------------------------------------------
-const auctionMinBid = (room) => room.auction.bid + RULES.AUCTION_MIN_STEP;
+/** Prima offerta: almeno metà del prezzo di listino; poi si rilancia di almeno AUCTION_MIN_STEP. */
+const auctionMinBid = (room) => (room.auction.bidderId
+  ? room.auction.bid + RULES.AUCTION_MIN_STEP
+  : B.auctionStart(room.auction.cell));
 
 /** Chi può ancora rilanciare contro l'offerta attuale (non ritirato, connesso, con abbastanza soldi). */
 function auctionRivals(room) {
