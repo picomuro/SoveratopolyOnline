@@ -2,10 +2,10 @@
  * Tabellone: geometria delle caselle sull'immagine, segni dei proprietari, case, pedine, dadi
  * e animazioni inviate dal server.
  */
-import { BOUNDS as BD, CELLS, RULES } from '../shared/board-data.js';
+import { BOUNDS as BD, CELLS, RULES, euro } from '../shared/board-data.js';
 import * as S from '../shared/board-data.js';
-import { $, closeModal, esc, openModal, sleep } from './dom.js';
-import { pl, shown, shownJail, state } from './store.js';
+import { $, closeModal, esc, openModal, sleep, toast } from './dom.js';
+import { meId, pl, shown, shownJail, state } from './store.js';
 import { showCellInfo } from './panels.js';
 import { showMurraReveal } from './murra.js';
 import { UI } from './ui-config.js';
@@ -219,6 +219,7 @@ export async function playAnim(steps) {
       if (step.t === 'dice') await rollDice(step.dice);
       else if (step.t === 'card') await showCard(step);
       else if (step.t === 'murra') await showMurraReveal(step);
+      else if (step.t === 'rent') showRent(step);
       else if (!pawn) continue;
       else if (step.t === 'move') {
         shownJail[step.playerId] = false;
@@ -239,6 +240,29 @@ export async function playAnim(steps) {
     }
   } finally {
     setBusy(false); // anche in caso di errore i pulsanti tornano disponibili
+  }
+}
+
+/** Animazioni saltate (scheda in background): restano comunque gli avvisi di pagamento. */
+export function showSkippedNotices(steps) {
+  for (const step of steps) if (step.t === 'rent') showRent(step);
+}
+
+/** Affitto pagato: chi paga vede un avviso da chiudere con OK, chi incassa un messaggio veloce. */
+function showRent(step) {
+  const payer = pl(step.playerId);
+  const owner = pl(step.ownerId);
+  const cell = CELLS[step.cell].name;
+  if (!payer || !owner) return;
+  if (payer.id === meId()) {
+    openModal(`
+      <div class="big-emoji">🏠</div>
+      <h2>Affitto da pagare</h2>
+      <p>Sei finito su <b>${esc(cell)}</b>, di proprietà di <b style="color:${owner.color}">${esc(owner.nickname)}</b>.</p>
+      <p>Paghi <b>${euro(step.amount)}</b> di affitto.</p>
+      <button class="btn btn-big btn-blue" data-close>OK</button>`);
+  } else if (owner.id === meId()) {
+    toast(`💰 ${payer.nickname} ti paga ${euro(step.amount)} di affitto per ${cell}`);
   }
 }
 

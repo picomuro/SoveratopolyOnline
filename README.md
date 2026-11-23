@@ -67,7 +67,7 @@ server/
   game/             motore di gioco, senza rete:
     turns.js          avvio partita, turni, timer della mossa, gioco automatico allo scadere
     board.js          dadi, movimento, caselle, carte, acquisti, prigione
-    money.js          pagamenti, liquidazione automatica, bancarotta, vittoria
+    money.js          pagamenti, debiti in sospeso, bancarotta, vittoria
     auction.js        aste (e sfida a Murra nelle aste a due)
     murra.js          minigioco della Murra
     trade.js          scambi tra giocatori
@@ -121,20 +121,21 @@ AUDIT.md            analisi del codice e stato delle correzioni
 - Si tirano 2 dadi e si avanza in senso orario.
 - **Proprietà libera**: puoi comprarla al prezzo indicato, oppure rinunciare.
 - **Asta**: se rinunci (o scade il tempo), la proprietà va all'asta tra tutti i giocatori ancora in gioco, te compreso. Si parte da metà del prezzo di listino (es. 100 € per una proprietà da 200 €) e si rilancia di almeno 10 €: ci sono 15 secondi per la prima offerta e 10 secondi dopo ogni rilancio. Chi si ritira non può rientrare. Vince l'offerta più alta; se nessuno offre, la proprietà resta libera.
-- **Proprietà di un altro**: paghi l'affitto.
+- **Proprietà di un altro**: paghi l'affitto. Un avviso a schermo, da chiudere con OK, ti dice quanto hai pagato e a chi; il proprietario vede un messaggio veloce.
   - Via (affitto base = 8% del prezzo): l'affitto raddoppia se il proprietario ha tutto il gruppo di colore. Con case e albergo vale ×4, ×11, ×28, ×36 e ×45.
   - Stazioni (Passaggio a Livello, Stazione degli Autobus, Stazione dei Treni, Marcello): 25, 50, 100 o 200 € in base a quante ne possiede il proprietario.
   - Raspa Elettrodomestici e Depuratore: dadi × 4, oppure dadi × 10 se il proprietario le ha entrambe.
 - **Case**: si costruiscono solo con tutto il gruppo di colore, in modo uniforme (5 case = albergo). Si rivendono a metà prezzo.
 - **Ipoteca**: incassi metà del prezzo, ma la proprietà non rende affitto. Per riscattarla paghi la metà del prezzo più il 10%.
-- **Scambi**: nel tuo turno premi 🤝 accanto a un giocatore e proponi proprietà e/o soldi in cambio di sue proprietà e/o soldi. L'altro ha 45 secondi per accettare; può accettare solo a mossa ferma (non durante un acquisto, un'asta o una Murra), mentre rifiutare si può sempre. Le proprietà di un gruppo con case non si possono scambiare. Gli scambi servono a completare i gruppi: senza, la partita rischierebbe di non finire mai.
+- **Scambi**: nel tuo turno (o quando devi pagare un debito) premi 🤝 accanto a un giocatore e proponi proprietà e/o soldi in cambio di sue proprietà e/o soldi. L'altro ha 45 secondi per accettare; può accettare solo a mossa ferma (non durante un acquisto, un'asta o una Murra), mentre rifiutare si può sempre. Le proprietà di un gruppo con case non si possono scambiare. Gli scambi servono a completare i gruppi: senza, la partita rischierebbe di non finire mai.
 - **Imprevisti / Probabilità**: 18 Imprevisti e 15 Probabilità, scritti in dialetto; sotto ogni carta compare l'effetto in italiano. Oltre a soldi, spostamenti e prigione ci sono: il servizio più vicino (se è di un altro si tirano i dadi e si paga 10 volte il risultato), la stazione più vicina (affitto doppio) e la carta "esci di prigione", che si conserva e si può cedere in uno scambio.
 - **Tasse**: Mazzo di rose di Rosario 200 €, Posto di Blocco 100 €.
 - **Doppio**: tiri di nuovo. Con tre doppi di fila vai in prigione.
 - **Prigione**: ci finisci arrivando su "In Prigione!" o con una carta. Per uscire paghi 50 €, usi la carta "esci di prigione" oppure provi a fare un doppio (massimo 3 tentativi, poi paghi per forza).
-- **Debiti**: se non hai abbastanza soldi, il gioco ipoteca le tue proprietà e, se serve, vende le case in automatico. Se non basta sei in **bancarotta**: le tue proprietà vanno al creditore, o tornano libere se il debito era con la banca.
+- **Debiti**: se devi pagare più contanti di quanti ne hai, compare l'avviso "Hai finito i soldi!". Il tempo si ferma finché non raccogli la cifra ipotecando proprietà, vendendo case o facendo uno scambio con un altro giocatore; appena hai abbastanza contanti il pagamento parte da solo e il turno riprende. Mentre devi pagare puoi solo ipotecare, vendere case e scambiare. Se sei scollegato per più di 15 secondi, il server ipoteca e vende al posto tuo.
+- **Bancarotta**: se la cifra supera quello che otterresti ipotecando tutto e vendendo tutte le case, sei subito in **bancarotta** e non giochi più (puoi ancora guardare, scrivere in chat e usare le emoji). Le tue proprietà vanno al creditore, o tornano libere se il debito era con la banca. Lo stesso succede se, mentre devi pagare, cedi in uno scambio quello che ti serviva per coprire il debito.
 - **Vince l'ultimo giocatore non in bancarotta.**
-- Ogni mossa (tirare i dadi, decidere un acquisto, chiudere il turno) ha un tempo massimo di 2 minuti. Se scade, il server tira i dadi, rinuncia all'acquisto o chiude il turno al posto del giocatore; se il giocatore è disconnesso lo fa dopo pochi secondi. Aste e Murra hanno tempi propri, più brevi.
+- Ogni mossa (tirare i dadi, decidere un acquisto, chiudere il turno) ha un tempo massimo di 2 minuti. Se scade, il server tira i dadi, rinuncia all'acquisto o chiude il turno al posto del giocatore; se il giocatore è disconnesso lo fa dopo pochi secondi. Aste e Murra hanno tempi propri, più brevi. Mentre qualcuno deve pagare un debito il tempo è fermo.
 - **Disconnessioni**: se un giocatore resta scollegato per più di 5 secondi, la cronologia lo segnala (una semplice ricarica della pagina non viene scritta). Il posto resta suo: può rientrare dallo stesso browser in automatico, oppure da qualsiasi dispositivo entrando con lo stesso codice e lo stesso nickname, e ritrova soldi e proprietà. Al rientro la cronologia scrive che è tornato.
 - **Murra**: minigioco a due. A ogni mano ognuno sceglie in segreto quante dita mostrare (da 1 a 5) e dichiara la somma delle due mani (da 2 a 10). Chi indovina la somma fa un punto; se indovinano entrambi, o nessuno, il punto non viene assegnato. Vince chi arriva per primo a 3 punti (nelle aste basta il primo punto, per non rallentare il gioco). Ci sono 20 secondi per ogni mano, poi il server sceglie a caso. Se chi deve scegliere, accettare o giocare si scollega per più di 5 secondi, il server decide subito al suo posto. Per non bloccare la partita, la sfida si chiude in anticipo dopo 30 mani o dopo 2 mani in cui nessuno dei due ha giocato: vince chi è avanti, a pari punti decide la sorte. Si gioca in tre casi:
   - **Asta rimasta a due**: quando resta un solo rivale in grado di rilanciare, può sfidare a Murra chi ha fatto l'offerta invece di rilanciare. Lo sfidato ha 15 secondi per accettare o rifiutare. Se accetta, chi vince compra la proprietà a quel prezzo. Se rifiuta, l'asta continua e la sfida non si può riproporre finché l'offerta non cambia.

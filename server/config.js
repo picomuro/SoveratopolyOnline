@@ -35,6 +35,7 @@ export const MURRA_CHOOSE_MS = 20000; // tempo per scegliere chi sfidare a Murra
 export const MURRA_OFFER_MS = 15000; // tempo per accettare una sfida a Murra in un'asta
 export const MURRA_PICK_MS = 20000; // tempo per scegliere dita e somma
 export const OFFLINE_MURRA_MS = 5000; // Murra: chi deve decidere ed è scollegato da 5 s viene sostituito dal server
+export const OFFLINE_DEBT_MS = 15000; // chi deve pagare ed è scollegato da 15 s: il server ipoteca al posto suo
 export const OFFLINE_LOG_MS = 5000; // disconnessioni più brevi (es. ricarica della pagina) non finiscono in cronologia
 export const HOST_GRACE_MS = 10000; // l'host che ricarica la pagina non perde il ruolo
 export const LOBBY_GHOST_MS = 60 * 1000; // in sala d'attesa un disconnesso viene rimosso dopo 60 s

@@ -46,7 +46,7 @@ function applyJailAndDoubles(room, p, doubles, anim) {
     log(room, `🔓 Ultimo tentativo fallito: ${p.nickname} deve pagare la cauzione.`);
     p.inJail = false;
     p.jailTurns = 0;
-    return pay(room, p, null, RULES.JAIL_FINE, 'la cauzione');
+    return pay(room, p, null, RULES.JAIL_FINE, 'la cauzione') !== 'bankrupt'; // se resta in sospeso si muove lo stesso
   }
   if (!doubles) return true;
   if (++room.turn.doubles >= MAX_DOUBLES) {
@@ -120,7 +120,10 @@ export function land(room, p, anim, diceSum, cardDepth = 0, special = {}) {
           `🎲 ${p.nickname} tira ${d[0]} + ${d[1]} per l'affitto: paga ${special.rollForRent} volte il risultato.`,
         );
       }
-      pay(room, p, playerById(room, pr.owner), rent, `l'affitto di ${cell.name}`);
+      const owner = playerById(room, pr.owner);
+      // Chi paga vede un avviso; se il pagamento resta in sospeso compare invece l'avviso del debito.
+      if (pay(room, p, owner, rent, `l'affitto di ${cell.name}`) === 'paid')
+        anim.push({ t: 'rent', playerId: p.id, ownerId: owner.id, cell: p.pos, amount: rent });
       break;
     }
     case 'tax':

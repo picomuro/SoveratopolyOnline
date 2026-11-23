@@ -112,33 +112,20 @@ test('asta senza offerte entro il tempo: la proprietà resta libera', () => {
   assert.ok(room.log.some((l) => l.includes('Asta deserta')));
 });
 
-test("debito non coperto: ipoteche automatiche, poi bancarotta e vittoria dell'ultimo rimasto", () => {
+test("debito oltre il valore di tutte le ipoteche: bancarotta immediata e vittoria dell'ultimo rimasto", () => {
   scriptDice([1, 2]);
   ({ room, players } = newGame());
   const [p0, p1] = players;
   give(room, p1, SOTTOPASSAGGIO, CASE_POPOLARI);
   room.props[SOTTOPASSAGGIO].houses = 5; // albergo: affitto altissimo
   room.props[CASE_POPOLARI].houses = 5;
-  give(room, p0, 39); // Torre di Carlo V: verrà ipotecata in automatico
+  give(room, p0, 39); // Torre di Carlo V: anche ipotecata non basterebbe
   p0.money = 10;
   landOn(SOTTOPASSAGGIO);
   assert.equal(p0.bankrupt, true);
   assert.equal(room.props[39].owner, p1.id, 'le proprietà vanno al creditore');
   assert.equal(room.phase, 'finished');
   assert.equal(room.winnerId, p1.id);
-});
-
-test('pagamento coperto vendendo le ipoteche: niente bancarotta', () => {
-  scriptDice([1, 2]);
-  ({ room, players } = newGame());
-  const [p0, p1] = players;
-  give(room, p1, SOTTOPASSAGGIO);
-  give(room, p0, 39);
-  p0.money = 0;
-  landOn(SOTTOPASSAGGIO);
-  assert.equal(p0.bankrupt, false);
-  assert.equal(room.props[39].mortgaged, true);
-  assert.equal(p1.money, RULES.START_MONEY + propRent(SOTTOPASSAGGIO, 0, false));
 });
 
 test('case: solo con il gruppo completo e in modo uniforme; ipoteca solo senza case', () => {

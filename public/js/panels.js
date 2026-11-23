@@ -7,9 +7,11 @@ import { $, button, esc, openModal, row } from './dom.js';
 import {
   canManage,
   clockOffset,
+  debtPhase,
   groupHasHouses,
   isMyTurn,
   meId,
+  myDebt,
   pl,
   propsOf,
   shown,
@@ -28,6 +30,7 @@ import { openTrade, renderTradeBox } from './trade.js';
 export function renderGame(prev) {
   buildCells();
   $('#game-code').textContent = state.code;
+  renderMyMoney(prev);
   // Allinea le pedine allo stato (dopo un'animazione sono già al posto giusto).
   for (const p of state.players) {
     if (pawnEls[p.id] && shown[p.id] !== p.pos) flash(pawnEls[p.id], 'jump', 600);
@@ -42,7 +45,19 @@ export function renderGame(prev) {
   renderActions();
   renderPlayers(prev);
   renderMyProps();
+  notifyMoney(prev);
   $('#log').innerHTML = state.log.map((text) => `<li>${esc(text)}</li>`).join('');
+}
+
+/** I miei soldi nella barra in alto, con un lampo quando cambiano e il debito da pagare. */
+function renderMyMoney(prev) {
+  const me = pl(meId());
+  const el = $('#my-money');
+  el.textContent = euro(me.money);
+  $('#my-dot').style.background = me.color;
+  $('#my-debt').textContent = me.bankrupt ? ' ☠️ in bancarotta' : myDebt() ? ` · devi ${euro(myDebt())}` : '';
+  const before = prev?.players?.find((p) => p.id === me.id);
+  if (before && before.money !== me.money) flash(el, before.money < me.money ? 'up' : 'down', 900);
 }
 
 export function renderBanner() {
@@ -54,12 +69,18 @@ export function renderBanner() {
     return;
   }
   const cur = pl(state.turn.playerId);
-  const special = state.murra ? '🤜 Murra!' : state.auction ? '🔨 Asta in corso!' : '';
+  const special = debtPhase()
+    ? '💸 Pagamento in sospeso'
+    : state.murra
+      ? '🤜 Murra!'
+      : state.auction
+        ? '🔨 Asta in corso!'
+        : '';
   const mine = cur.id === meId() && !special;
   b.className = `turn-banner${mine ? ' mine' : ''}`;
   b.style.background = special ? '' : cur.color;
   b.innerHTML = `<span>${special || (mine ? '🎯 Tocca a TE!' : `Tocca a ${esc(cur.nickname)}`)}</span>
-    <span class="timer" data-deadline="${state.turn.deadline}"></span>`;
+    ${state.turn.deadline ? `<span class="timer" data-deadline="${state.turn.deadline}"></span>` : '<span class="timer">⏸ tempo fermo</span>'}`;
   tickTimers();
 }
 /** Aggiorna tutti i conti alla rovescia (turno e scambio). */
@@ -75,6 +96,7 @@ export function renderActions() {
   box.innerHTML = '';
   if (!state.turn) return;
   renderTradeBox(box);
+  if (debtPhase()) return renderDebtBox(box);
   if (state.murra) return renderMurraBox(box);
   if (state.auction) return renderAuctionBox(box);
   const { phase, pendingBuy } = state.turn;
@@ -123,6 +145,65 @@ export function renderActions() {
   } else {
     box.append(button('✅ Fine turno', 'btn-big btn-blue', () => send('game:endTurn')));
   }
+}
+
+// ---------- Debiti ----------
+/** Elenco leggibile dei pagamenti in sospeso di un giocatore. */
+const debtLines = (debts) =>
+  debts
+    .map((d) => `${euro(d.amount)} ${d.to ? `a ${esc(pl(d.to)?.nickname || '')} ` : ''}per ${esc(d.reason)}`)
+    .join('<br>');
+const debtsOf = (id) => state.debts.filter((d) => d.playerId === id);
+
+/** Il turno aspetta un pagamento: chi deve pagare vede cosa fare, gli altri chi si aspetta. */
+function renderDebtBox(box) {
+  const me = pl(meId());
+  for (const id of new Set(state.debts.map((d) => d.playerId))) {
+    const debts = debtsOf(id);
+    const total = debts.reduce((sum, d) => sum + d.amount, 0);
+    if (id !== me.id) {
+      box.insertAdjacentHTML(
+        'beforeend',
+        `<div class="waiting">⏳ ${esc(pl(id).nickname)} deve raccogliere ${euro(total)} per pagare: sta ipotecando o cerca uno scambio…</div>`,
+      );
+      continue;
+    }
+    box.insertAdjacentHTML(
+      'beforeend',
+      `<div class="buy-card debt"><div class="band"></div><div class="body">
+        <div class="name">💸 Hai finito i soldi!</div>
+        <div>Devi pagare <b>${euro(total)}</b> e hai ${euro(me.money)}.<br><small>${debtLines(debts)}</small></div>
+        <div>Ipoteca una proprietà o vendi case in <b>Le mie proprietà</b> (🏦, −🏠), oppure proponi uno scambio a un giocatore con 🤝.</div>
+        <div class="who">⏸ Il tempo è fermo finché non hai pagato.</div>
+      </div></div>`,
+    );
+  }
+}
+
+/** Avvisi a schermo quando finisco i soldi o vado in bancarotta. */
+function notifyMoney(prev) {
+  if (prev?.phase !== 'playing' || state.phase !== 'playing') return;
+  const me = pl(meId());
+  const before = prev.players.find((p) => p.id === meId());
+  if (!me || !before) return;
+  if (me.bankrupt && !before.bankrupt) {
+    openModal(`
+      <div class="big-emoji">☠️</div>
+      <h2>Sei in bancarotta!</h2>
+      <p>Nemmeno ipotecando tutte le tue proprietà avresti i soldi per pagare: per te la partita finisce qui.</p>
+      <p class="who">Puoi continuare a guardare, scrivere in chat e mandare le emoji. 💬</p>
+      <button class="btn btn-big btn-blue" data-close>OK</button>`);
+    return;
+  }
+  const owedBefore = (prev.debts || []).some((d) => d.playerId === me.id);
+  if (!myDebt() || owedBefore) return;
+  openModal(`
+    <div class="big-emoji">💸</div>
+    <h2>Hai finito i soldi!</h2>
+    <p>Ipoteca una tua proprietà o effettua uno scambio con un giocatore per ottenere dei soldi.</p>
+    <p>Devi pagare <b>${euro(myDebt())}</b> e hai ${euro(me.money)}:<br><small>${debtLines(debtsOf(me.id))}</small></p>
+    <p class="who">⏸ Il tempo è fermo finché non hai pagato.</p>
+    <button class="btn btn-big btn-pink" data-close>OK</button>`);
 }
 
 // ---------- Aste ----------
@@ -208,6 +289,7 @@ export function renderMyProps() {
     ),
   );
   const can = canManage();
+  const paying = debtPhase(); // per pagare un debito si può solo vendere e ipotecare
   const me = pl(meId());
   for (const i of mine) {
     const cell = CELLS[i];
@@ -234,12 +316,18 @@ export function renderMyProps() {
       el.querySelector('.ops').append(b);
     };
     if (fullGroup && !pr.mortgaged && pr.houses < RULES.MAX_HOUSES)
-      op('+🏠', 'build', 'btn-green', `Costruisci (${euro(S.houseCost(i))})`, me.money >= S.houseCost(i));
+      op('+🏠', 'build', 'btn-green', `Costruisci (${euro(S.houseCost(i))})`, !paying && me.money >= S.houseCost(i));
     if (pr.houses > 0) op('−🏠', 'sell', 'btn-yellow', `Vendi casa (+${euro(S.houseSellValue(i))})`);
     if (!pr.mortgaged && !groupHasHouses(i))
       op('🏦', 'mortgage', 'btn-ghost', `Ipoteca (+${euro(S.mortgageValue(i))})`);
     if (pr.mortgaged)
-      op('✨', 'unmortgage', 'btn-blue', `Riscatta (-${euro(S.unmortgageCost(i))})`, me.money >= S.unmortgageCost(i));
+      op(
+        '✨',
+        'unmortgage',
+        'btn-blue',
+        `Riscatta (-${euro(S.unmortgageCost(i))})`,
+        !paying && me.money >= S.unmortgageCost(i),
+      );
     box.append(el);
   }
 }

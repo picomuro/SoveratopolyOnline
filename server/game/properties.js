@@ -1,5 +1,6 @@
 /**
- * Gestione delle proprietà del giocatore di turno: case, alberghi, ipoteche.
+ * Gestione delle proprietà: case, alberghi, ipoteche.
+ * Nel proprio turno (a mossa ferma) si fa tutto; chi deve pagare un debito può solo vendere e ipotecare.
  */
 import {
   CELLS,
@@ -12,7 +13,23 @@ import {
   unmortgageCost,
 } from '../../shared/board-data.js';
 import { fail } from './errors.js';
-import { log } from './state.js';
+import { isCurrent, log } from './state.js';
+import { owedBy } from './money.js';
+import { settleAndResume } from './turns.js';
+
+/** Azione richiesta da un giocatore: controlla chi può farla adesso, poi paga i debiti coperti. */
+export function manageProperty(room, p, action, cellIdx) {
+  if (room.phase === 'playing' && room.turn.phase === 'debt') {
+    if (!owedBy(room, p)) fail('BAD_PHASE', 'Si aspetta che un giocatore paghi il suo debito.');
+    if (!['sell', 'mortgage'].includes(action))
+      fail('BAD_PHASE', 'Prima paga il debito: puoi solo ipotecare o vendere case.');
+    manage(room, p, action, cellIdx);
+    return settleAndResume(room);
+  }
+  if (!isCurrent(room, p)) fail('NOT_YOUR_TURN', 'Non è il tuo turno.');
+  if (!['roll', 'end'].includes(room.turn.phase)) fail('BAD_PHASE', 'Azione non disponibile adesso.');
+  manage(room, p, action, cellIdx);
+}
 
 /** action: build | sell | mortgage | unmortgage sulla casella cellIdx. */
 export function manage(room, p, action, cellIdx) {

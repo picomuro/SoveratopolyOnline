@@ -5,9 +5,11 @@
 import { HOST_GRACE_MS, OFFLINE_LOG_MS } from '../config.js';
 import { later } from './output.js';
 import { connectedCount, fixHost, isCurrent, log } from './state.js';
-import { endTurn, setTimer } from './turns.js';
+import { endTurn, setTimer, settleAndResume } from './turns.js';
 import { bankrupt } from './money.js';
 import { cancelMurra, watchMurraAbsence } from './murra.js';
+
+const debtPhase = (room) => room.phase === 'playing' && room.turn?.phase === 'debt';
 
 /** Il giocatore è (di nuovo) collegato. */
 export function playerConnected(room, p, socketId) {
@@ -19,7 +21,8 @@ export function playerConnected(room, p, socketId) {
   room.emptySince = null;
   room.lastActivity = Date.now();
   fixHost(room, HOST_GRACE_MS);
-  if (isCurrent(room, p)) setTimer(room, true); // chi rientra nel proprio turno riprende il tempo normale
+  // Chi rientra nel proprio turno riprende il tempo normale; un debitore che rientra ferma l'ipoteca automatica.
+  if (isCurrent(room, p) || debtPhase(room)) setTimer(room, true);
 }
 
 /** Il giocatore si è scollegato: il posto resta riservato per il rientro. */
@@ -35,9 +38,9 @@ export function playerDisconnected(room, p) {
       log(room, `📴 ${p.nickname} si è disconnesso: può rientrare con lo stesso codice e lo stesso nickname.`);
     });
   }
-  if (room.murra) watchMurraAbsence(room, p);
-  // Se era il suo turno, accorcia il timer: il gioco non resta bloccato.
-  if (isCurrent(room, p)) setTimer(room, true);
+  if (room.murra && room.turn?.phase === 'murra') watchMurraAbsence(room, p);
+  // Se era il suo turno (o doveva pagare), accorcia il timer: il gioco non resta bloccato.
+  if (isCurrent(room, p) || debtPhase(room)) setTimer(room, true);
   if (room.hostId === p.id) later(room, HOST_GRACE_MS + 100, () => fixHost(room, HOST_GRACE_MS));
 }
 
@@ -55,6 +58,7 @@ export function playerLeft(room, p) {
     bankrupt(room, p, null);
     if (wasCurrent) endTurn(room);
     else if (room.murra && [room.murra.a, room.murra.b].includes(p.id)) cancelMurra(room);
+    else settleAndResume(room); // se il turno aspettava un suo pagamento, riparte
   }
   fixHost(room);
 }

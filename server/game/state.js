@@ -14,7 +14,7 @@ export function newRoomState(code) {
     players: [],
     props: {}, // cella -> { owner, houses, mortgaged }
     turnIndex: 0,
-    turn: null, // { phase: roll|buy|auction|murra|end, doubles, rollAgain, pendingBuy, deadline, limit }
+    turn: null, // { phase: roll|buy|auction|murra|debt|end, doubles, rollAgain, pendingBuy, deadline, limit }
     decks: {},
     lastDice: null,
     winnerId: null,
@@ -22,6 +22,7 @@ export function newRoomState(code) {
     tradeTimer: null,
     auction: null, // { cell, bid, bidderId, passed: [id], murraRefused } mentre una proprietà è all'asta
     murra: null, // sfida a Murra in corso (vedi murra.js)
+    debts: [], // pagamenti in sospeso: { playerId, to, amount, reason } (vedi money.js)
     chat: [], // ultimi messaggi: { id, playerId, nickname, color, text }
     chatSeq: 0,
     log: [],
@@ -76,7 +77,8 @@ export function log(room, text) {
 
 /** Stato inviato ai client: niente token, niente socket, niente scelte segrete della Murra. */
 export function publicState(room) {
-  const { murra } = room;
+  // Una Murra in attesa che un debito sia pagato non si mostra ancora.
+  const murra = room.turn?.phase === 'debt' ? null : room.murra;
   return {
     code: room.code,
     hostId: room.hostId,
@@ -100,6 +102,7 @@ export function publicState(room) {
       deadline: room.turn.deadline,
     },
     trade: room.trade,
+    debts: room.debts,
     auction: room.auction && { ...room.auction, challengerId: murraChallenger(room) },
     // Le scelte restano segrete fino alla rivelazione: ai client arriva solo chi ha già giocato.
     murra: murra && {

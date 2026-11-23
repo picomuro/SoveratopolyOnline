@@ -29,7 +29,7 @@ export function renderTradeBox(box) {
   const timer = `<span class="timer" data-deadline="${t.expires}"></span>`;
   if (t.to === meId()) {
     el.innerHTML = `<b>🤝 ${esc(from.nickname)} ti propone uno scambio ${timer}</b>${sides('Tu ricevi', 'Tu dai', t.give, t.get)}`;
-    const busy = !['roll', 'end'].includes(state.turn.phase); // asta, Murra o acquisto in corso
+    const busy = !['roll', 'end', 'debt'].includes(state.turn.phase); // asta, Murra o acquisto in corso
     if (busy) el.insertAdjacentHTML('beforeend', '<small>Potrai accettare appena finisce la mossa in corso.</small>');
     el.append(
       row(

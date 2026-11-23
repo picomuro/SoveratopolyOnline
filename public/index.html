@@ -71,7 +71,10 @@
               In prigione: paga 50 €, usa la carta 🃏 "esci di prigione" oppure prova a fare un doppio (massimo 3
               tentativi).
             </li>
-            <li>Senza soldi? Il gioco ipoteca e vende case per te. Se non basta, sei in bancarotta.</li>
+            <li>
+              Senza soldi? Ipoteca, vendi case o fai uno scambio: il tempo si ferma finché non paghi. Se nemmeno
+              ipotecando tutto ci arrivi, sei in bancarotta.
+            </li>
             <li><b>Vince l'ultimo che resta con dei soldi!</b> 🏆</li>
           </ul>
         </details>
@@ -106,6 +109,14 @@
 
     <!-- ===================== PARTITA ===================== -->
     <section id="screen-game" class="screen hidden">
+      <!-- Barra sempre visibile (anche da telefono): i miei soldi, il codice della stanza, l'uscita -->
+      <header class="game-top">
+        <span class="my-money" aria-live="polite"
+          ><span class="dot" id="my-dot"></span>💰 <b id="my-money"></b><small id="my-debt"></small
+        ></span>
+        <span class="room-code">Stanza <b id="game-code"></b></span>
+        <button id="btn-leave-game" class="btn btn-pink btn-small">🚪 Esci</button>
+      </header>
       <div class="game-layout">
         <div class="board-wrap">
           <div id="board" class="board">
@@ -127,6 +138,11 @@
           <div class="reactions" id="reactions"></div>
 
           <div class="card-box">
+            <h3>Giocatori</h3>
+            <ul id="players" class="players"></ul>
+          </div>
+
+          <div class="card-box">
             <h3>Chat</h3>
             <div class="chat" data-chat>
               <ul class="chat-list" aria-live="polite"></ul>
@@ -144,11 +160,6 @@
           </div>
 
           <div class="card-box">
-            <h3>Giocatori</h3>
-            <ul id="players" class="players"></ul>
-          </div>
-
-          <div class="card-box">
             <h3>Le mie proprietà</h3>
             <div id="my-props" class="my-props"></div>
           </div>
@@ -156,11 +167,6 @@
           <div class="card-box">
             <h3>Cronaca</h3>
             <ul id="log" class="log"></ul>
-          </div>
-
-          <div class="footer-row">
-            <span>Stanza <b id="game-code"></b></span>
-            <button id="btn-leave-game" class="btn btn-ghost btn-small">Abbandona</button>
           </div>
         </aside>
       </div>

@@ -236,7 +236,8 @@ export function cancelMurra(room) {
 // --- Azioni dei giocatori ------------------------------------------------------
 
 function currentMurra(room) {
-  if (!room.murra) fail('BAD', 'Nessuna Murra in corso.');
+  // Una sfida nata insieme a un debito parte solo dopo il pagamento (vedi finishAction).
+  if (!room.murra || room.turn?.phase !== 'murra') fail('BAD', 'Nessuna Murra in corso.');
   return room.murra;
 }
 

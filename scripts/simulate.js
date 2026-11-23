@@ -35,6 +35,8 @@ function checkState(st) {
   if (st.phase === 'playing') {
     const phase = st.turn.phase;
     if (Boolean(st.murra) !== (phase === 'murra')) problems.push(`Murra e fase "${phase}" non coincidono`);
+    if (Boolean(st.debts.length) !== (phase === 'debt')) problems.push(`debiti e fase "${phase}" non coincidono`);
+    if (phase === 'debt' && st.turn.deadline) problems.push('tempo che scorre durante un debito');
     if (st.auction && !['auction', 'murra'].includes(phase)) problems.push(`asta in fase "${phase}"`);
     if (!st.auction && phase === 'auction') problems.push('fase asta senza asta');
     if (st.players.find((p) => p.id === st.turn.playerId).bankrupt) problems.push('turno a un giocatore in bancarotta');
@@ -81,6 +83,7 @@ function decide(bot, st) {
     return next <= limit ? ['auction:bid', { amount: next }] : ['auction:pass'];
   }
 
+  if (st.turn.phase === 'debt') return payDebt(me, st);
   if (st.turn.playerId !== me.id || st.trade) return null;
   const { phase, pendingBuy } = st.turn;
   if (phase === 'roll') {
@@ -130,6 +133,20 @@ function decide(bot, st) {
   return ['game:endTurn'];
 }
 
+/** Debito in sospeso: il bot vende una casa (in modo uniforme) o ipoteca, finché non paga. */
+function payDebt(me, st) {
+  if (!st.debts.some((d) => d.playerId === me.id)) return null;
+  const mine = Object.keys(st.props)
+    .map(Number)
+    .filter((i) => st.props[i].owner === me.id);
+  const built = mine.find(
+    (i) => st.props[i].houses > 0 && st.props[i].houses === Math.max(...groupOf(i).map((c) => st.props[c].houses)),
+  );
+  if (built !== undefined) return ['game:manage', { action: 'sell', cell: built }];
+  const free = mine.find((i) => !st.props[i].mortgaged && groupOf(i).every((c) => st.props[c].houses === 0));
+  return free !== undefined ? ['game:manage', { action: 'mortgage', cell: free }] : null;
+}
+
 /**
  * Gioca una partita completa. Ritorna { finished, winner, actions, seconds, problems, serverErrors }.
  */
@@ -140,6 +157,7 @@ export async function runSimulation({ players = 4, maxSeconds = 90, log = () => 
   const problems = new Set();
   const serverErrors = [];
   let actions = 0;
+  let debts = 0; // pagamenti rimasti in sospeso durante la partita
   let finished = null;
   const started = Date.now();
 
@@ -150,6 +168,7 @@ export async function runSimulation({ players = 4, maxSeconds = 90, log = () => 
       await new Promise((r) => socket.on('connect', r));
       const bot = { socket, state: null, busy: false, tried: new Set(), challenged: new Set(), greed: 0.5 + k * 0.1 };
       socket.on('room:state', (st) => {
+        if (k === 0 && st.debts?.length > (bot.state?.debts?.length ?? 0)) debts++;
         bot.state = st;
         for (const p of checkState(st)) problems.add(p);
         if (st.phase === 'finished') finished ??= st;
@@ -190,6 +209,7 @@ export async function runSimulation({ players = 4, maxSeconds = 90, log = () => 
     finished: Boolean(finished),
     winner: winner?.nickname ?? null,
     actions,
+    debts,
     seconds: Math.round((Date.now() - started) / 1000),
     problems: [...problems],
     serverErrors,
@@ -203,7 +223,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const result = await runSimulation({ players, maxSeconds, log: console.log });
   console.log(
     result.finished
-      ? `Partita finita in ${result.seconds} s e ${result.actions} azioni: vince ${result.winner}.`
+      ? `Partita finita in ${result.seconds} s e ${result.actions} azioni (${result.debts} debiti pagati ipotecando): vince ${result.winner}.`
       : `Partita non finita entro ${maxSeconds} s (${result.actions} azioni).`,
   );
   for (const p of result.problems) console.log(`INCOERENZA: ${p}`);

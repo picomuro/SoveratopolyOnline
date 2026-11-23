@@ -58,8 +58,14 @@ export const shownJail = {}; // la pedina è disegnata dentro la prigione?
 export const meId = () => session?.playerId;
 export const pl = (id) => state.players.find((p) => p.id === id);
 export const isMyTurn = () => state?.phase === 'playing' && state.turn.playerId === meId();
-/** Case, ipoteche e scambi: solo nel proprio turno, non durante un acquisto o un'asta. */
-export const canManage = () => isMyTurn() && ['roll', 'end'].includes(state.turn.phase);
+/** Il turno è fermo in attesa di un pagamento (qualcuno deve ipotecare o fare uno scambio). */
+export const debtPhase = () => state?.phase === 'playing' && state.turn?.phase === 'debt';
+/** Quanto devo ancora pagare, in totale. */
+export const myDebt = () =>
+  (state?.debts || []).filter((d) => d.playerId === meId()).reduce((sum, d) => sum + d.amount, 0);
+/** Case, ipoteche e scambi: nel proprio turno a mossa ferma, oppure per pagare un debito. */
+export const canManage = () =>
+  (isMyTurn() && ['roll', 'end'].includes(state.turn.phase)) || (debtPhase() && myDebt() > 0);
 export const propsOf = (id) =>
   Object.keys(state.props)
     .map(Number)

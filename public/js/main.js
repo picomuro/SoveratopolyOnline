@@ -8,7 +8,7 @@
 import { initModal } from './dom.js';
 import { initNet, socket } from './net.js';
 import { applyState, initScreens } from './screens.js';
-import { initDice, playAnim } from './board.js';
+import { initDice, playAnim, showSkippedNotices } from './board.js';
 import { initPanels } from './panels.js';
 import { initChat, showReaction } from './chat.js';
 
@@ -50,7 +50,7 @@ socket.on('game:anim', (a) => {
   queue.push(() => {
     waitingAnims--;
     // Scheda in background o animazioni arretrate: si salta direttamente allo stato finale.
-    if (document.hidden || waitingAnims > 0) return undefined;
+    if (document.hidden || waitingAnims > 0) return showSkippedNotices(a.steps);
     return playAnim(a.steps);
   });
   setTimeout(runQueue);

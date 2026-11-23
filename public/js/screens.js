@@ -1,7 +1,7 @@
 /**
  * Schermate: home (lobby), sala d'attesa, partita.
  */
-import { $, esc, toast } from './dom.js';
+import { $, closeModal, esc, openModal, toast } from './dom.js';
 import { meId, pl, session, setClockOffset, setState, state, store, urlCode } from './store.js';
 import { backToLobby, enter, send } from './net.js';
 import { renderGame, renderVictory } from './panels.js';
@@ -94,11 +94,24 @@ export async function leave() {
   await send('room:leave', {}, { quiet: true }); // se la stanza non c'è più va bene lo stesso
   backToLobby();
 }
-function leaveGame() {
-  const me = pl(meId());
-  if (state.phase === 'playing' && !me.bankrupt && !confirm('Vuoi abbandonare? Le tue proprietà torneranno libere.'))
-    return;
-  leave();
+/** Uscita dalla stanza (sala d'attesa o partita), sempre dopo una conferma. */
+function confirmLeave() {
+  const me = state && pl(meId());
+  const inGame = state?.phase === 'playing' && me && !me.bankrupt;
+  openModal(`
+    <div class="big-emoji">🚪</div>
+    <h2>Vuoi uscire dalla stanza?</h2>
+    <p>${
+      inGame
+        ? 'La partita è in corso: se esci sei fuori dal gioco e le tue proprietà tornano libere.'
+        : 'Potrai rientrare con il codice della stanza.'
+    }</p>
+    <button class="btn btn-big btn-pink" id="m-leave">Sì, esci</button>
+    <button class="btn btn-ghost" data-close>No, resto</button>`);
+  $('#m-leave').onclick = () => {
+    closeModal();
+    leave();
+  };
 }
 
 /** Collega i controlli di home, sala d'attesa e partita. */
@@ -116,7 +129,7 @@ export function initScreens() {
   $('#btn-share').onclick = shareLink;
   $('#btn-start').onclick = () => send('game:start');
   $('#btn-rematch').onclick = () => send('game:start');
-  $('#btn-leave-wait').onclick = leave;
+  $('#btn-leave-wait').onclick = confirmLeave;
   $('#btn-victory-exit').onclick = leave;
-  $('#btn-leave-game').onclick = leaveGame;
+  $('#btn-leave-game').onclick = confirmLeave;
 }

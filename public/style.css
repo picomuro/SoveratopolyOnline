@@ -211,6 +211,70 @@ input:focus {
 }
 
 /* ---------- Layout partita ---------- */
+.game-top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  background: var(--ink);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(29, 27, 58, 0.3);
+}
+.game-top .my-money {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 1.3rem;
+  min-width: 0;
+  white-space: nowrap;
+}
+.game-top .my-money b {
+  font-variant-numeric: tabular-nums;
+  border-radius: 8px;
+  padding: 0 4px;
+}
+.game-top .my-money small {
+  font-size: 0.85rem;
+  color: var(--yellow);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.game-top .my-money b.up {
+  animation: money-up 0.9s;
+}
+.game-top .my-money b.down {
+  animation: money-down 0.9s;
+}
+@keyframes money-up {
+  30% {
+    background: var(--green);
+  }
+}
+@keyframes money-down {
+  30% {
+    background: var(--pink);
+  }
+}
+.game-top .room-code {
+  margin-left: auto;
+  font-size: 0.9rem;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+.game-top .btn {
+  flex: none;
+}
+@media (max-width: 420px) {
+  .game-top .room-code {
+    display: none; /* su schermi stretti restano soldi e uscita */
+  }
+  .game-top .btn {
+    margin-left: auto;
+  }
+}
 .game-layout {
   display: grid;
   gap: 16px;
@@ -226,7 +290,7 @@ input:focus {
   }
   .board-wrap {
     position: sticky;
-    top: 12px;
+    top: 68px; /* sotto la barra in alto */
   }
 }
 
@@ -483,6 +547,9 @@ input:focus {
 .buy-card.murra {
   animation: none;
 } /* si ridisegnano spesso: niente effetto di comparsa */
+.buy-card.debt .band {
+  background: var(--pink);
+}
 .buy-card .body {
   padding: 12px 14px;
   display: flex;
@@ -646,14 +713,6 @@ input:focus {
 .busy #my-props button {
   pointer-events: none;
   opacity: 0.5;
-}
-
-.footer-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  color: #fff;
-  padding: 0 4px;
 }
 
 /* ---------- Murra ---------- */

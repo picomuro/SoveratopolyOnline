@@ -2,15 +2,19 @@
  * Scambi tra giocatori: proprietà, soldi e carte "esci di prigione".
  * Senza scambi i gruppi di colore restano divisi e la partita può non finire mai.
  * Si propongono e si accettano solo a mossa ferma (fasi roll ed end del turno), uno alla volta.
+ * Mentre il turno aspetta un pagamento (fase debt) chi deve pagare può proporre scambi per fare soldi.
  */
 import { BOARD_SIZE, CELLS, groupOf, isBuyable } from '../../shared/board-data.js';
 import { TRADE_MS } from '../config.js';
 import { fail } from './errors.js';
 import { later } from './output.js';
 import { isCurrent, log, playerById } from './state.js';
+import { owedBy } from './money.js';
+import { settleAndResume } from './turns.js';
 
-/** Fasi del turno in cui gli scambi si possono proporre e accettare. */
-const tradeOpenPhase = (room) => room.phase === 'playing' && ['roll', 'end'].includes(room.turn.phase);
+/** Fasi del turno in cui gli scambi si possono accettare. */
+const tradeOpenPhase = (room) => room.phase === 'playing' && ['roll', 'end', 'debt'].includes(room.turn.phase);
+const inDebtPhase = (room) => room.phase === 'playing' && room.turn.phase === 'debt';
 
 /** Controlla che un'offerta sia (ancora) valida. Ritorna [chi propone, chi riceve]. */
 function validateTrade(room, t) {
@@ -52,8 +56,12 @@ const quantity = (v) => {
 
 /** Il giocatore di turno propone uno scambio a un altro giocatore. */
 export function proposeTrade(room, p, { to, giveProps, getProps, giveMoney, getMoney, giveCards, getCards }) {
-  if (!isCurrent(room, p)) fail('NOT_YOUR_TURN', 'Non è il tuo turno.');
-  if (!tradeOpenPhase(room)) fail('BAD_PHASE', 'Azione non disponibile adesso.');
+  if (inDebtPhase(room)) {
+    if (!owedBy(room, p)) fail('BAD_PHASE', 'Si aspetta che un giocatore paghi il suo debito.');
+  } else {
+    if (!isCurrent(room, p)) fail('NOT_YOUR_TURN', 'Non è il tuo turno.');
+    if (!tradeOpenPhase(room)) fail('BAD_PHASE', 'Azione non disponibile adesso.');
+  }
   if (room.trade) fail('BAD', "C'è già uno scambio in corso.");
   const trade = {
     from: p.id,
@@ -89,6 +97,7 @@ export function respondTrade(room, p, accept) {
   from.money -= net;
   to.money += net;
   cancelTrade(room, `✅ Scambio fatto tra ${from.nickname} e ${to.nickname}!`);
+  settleAndResume(room); // i soldi ricevuti possono coprire un debito in sospeso
 }
 
 /** Chi ha proposto ritira la proposta. */

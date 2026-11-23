@@ -165,13 +165,8 @@ export function registerSocketHandlers(io) {
     );
     on('game:payJail', () => act(() => myTurn('roll'), game.payJail));
     on('game:useJailCard', () => act(() => myTurn('roll'), game.useJailCard));
-    // Case e ipoteche: solo nel proprio turno, non mentre si decide un acquisto.
-    on('game:manage', ({ action, cell }) =>
-      act(
-        () => myTurn('roll', 'end'),
-        (room, p) => game.manage(room, p, action, cell),
-      ),
-    );
+    // Case e ipoteche: nel proprio turno a mossa ferma, oppure per pagare un debito (vedi manageProperty).
+    on('game:manage', ({ action, cell }) => act(ctx, (room, p) => game.manageProperty(room, p, action, cell)));
 
     // --- Scambi -------------------------------------------------------------
     on('trade:propose', (offer) => act(ctx, (room, p) => game.proposeTrade(room, p, offer)));
