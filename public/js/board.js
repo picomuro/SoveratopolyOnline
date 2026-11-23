@@ -53,8 +53,8 @@ export const place = (el, r) =>
 /** Posizione (in %) della k-esima di n pedine sulla stessa casella (fino a 8). */
 export function pawnSpot(i, k, n, inJail) {
   if (i === RULES.JAIL_CELL) {
-    if (inJail) return { x: 8.6 + (k % 3) * 2.6, y: 89.4 + Math.floor(k / 3) * 2.8 }; // dentro il riquadro arancione
-    return k < 4 ? { x: 3.3, y: 86.6 + k * 3 } : { x: 6.3 + (k - 4) * 2.6, y: 96.6 }; // lungo la fascia "Transito"
+    if (inJail) return { x: 8.4 + (k % 3) * 2.9, y: 89.2 + Math.floor(k / 3) * 3.2 }; // dentro il riquadro arancione
+    return k < 4 ? { x: 3.3, y: 86.4 + k * 3.4 } : { x: 6.6 + (k - 4) * 2.9, y: 96.4 }; // lungo la fascia "Transito"
   }
   const r = cellRect(i);
   const cx = (r.x0 + r.x1) / 2,
@@ -64,7 +64,24 @@ export function pawnSpot(i, k, n, inJail) {
   const rows = Math.ceil(n / cols);
   const col = k % cols,
     row = Math.floor(k / cols);
-  return { x: cx + (col - (cols - 1) / 2) * 3.2, y: cy + (row - (rows - 1) / 2) * 3.2 };
+  const gap = n > 4 ? 3.6 : 4.3; // con tante pedine sulla stessa casella si stringono un po'
+  return { x: cx + (col - (cols - 1) / 2) * gap, y: cy + (row - (rows - 1) / 2) * gap };
+}
+
+/**
+ * Freccetta sul bordo del tabellone, del colore della pedina, puntata verso la casella del giocatore:
+ * k-esima di n frecce sulla stessa casella. Gli angoli usano il bordo in basso (VIA!, prigione) o in alto.
+ */
+const ARROW_EDGE = 2.3; // distanza (in %) del centro della freccia dal bordo
+const ARROW_ROTATE = { bottom: 0, top: 180, left: 90, right: -90 };
+export function arrowSpot(i, k, n) {
+  const r = cellRect(i);
+  const side = r.side === 'corner' ? (i < 20 ? 'bottom' : 'top') : r.side;
+  const shift = (k - (n - 1) / 2) * 3.6;
+  const along = side === 'bottom' || side === 'top' ? (r.x0 + r.x1) / 2 + shift : (r.y0 + r.y1) / 2 + shift;
+  const edge = side === 'bottom' || side === 'right' ? 100 - ARROW_EDGE : ARROW_EDGE;
+  const vertical = side === 'bottom' || side === 'top';
+  return { x: vertical ? along : edge, y: vertical ? edge : along, rotate: ARROW_ROTATE[side] };
 }
 
 // ---------- Livello caselle (cliccabili, proprietari, case) ----------
@@ -121,6 +138,7 @@ export function renderCells() {
 
 // ---------- Pedine ----------
 export const pawnEls = {};
+const arrowEls = {}; // freccette sul bordo, una per pedina
 export function layoutPawns(activeId = null) {
   const layer = $('#pawns-layer');
   const byCell = {};
@@ -132,6 +150,11 @@ export function layoutPawns(activeId = null) {
       el.style.background = p.color;
       layer.appendChild(el);
       pawnEls[p.id] = el;
+      const arrow = document.createElement('div');
+      arrow.className = 'pawn-arrow';
+      arrow.style.setProperty('--c', p.color);
+      layer.appendChild(arrow);
+      arrowEls[p.id] = arrow;
     }
     if (shown[p.id] === undefined) {
       shown[p.id] = p.pos;
@@ -139,6 +162,8 @@ export function layoutPawns(activeId = null) {
     }
     pawnEls[p.id].classList.toggle('hidden', p.bankrupt);
     pawnEls[p.id].classList.toggle('active', p.id === activeId);
+    arrowEls[p.id].classList.toggle('hidden', p.bankrupt);
+    arrowEls[p.id].classList.toggle('active', p.id === activeId);
     if (p.bankrupt) continue;
     const key = `${shown[p.id]}${shownJail[p.id] ? 'j' : ''}`;
     (byCell[key] = byCell[key] || []).push(p);
@@ -150,11 +175,25 @@ export function layoutPawns(activeId = null) {
       pawnEls[p.id].style.top = `${spot.y}%`;
     });
   }
+  // Frecce sul bordo: una per giocatore, affiancate se più giocatori sono sulla stessa casella.
+  const byPos = {};
+  for (const p of state.players) if (!p.bankrupt) (byPos[shown[p.id]] = byPos[shown[p.id]] || []).push(p);
+  for (const [pos, list] of Object.entries(byPos)) {
+    list.forEach((p, k) => {
+      const a = arrowSpot(Number(pos), k, list.length);
+      const st = arrowEls[p.id].style;
+      st.left = `${a.x}%`;
+      st.top = `${a.y}%`;
+      st.setProperty('--rot', `${a.rotate}deg`);
+    });
+  }
   // Pedine di giocatori non più presenti
   for (const id of Object.keys(pawnEls)) {
     if (!pl(id)) {
       pawnEls[id].remove();
+      arrowEls[id].remove();
       delete pawnEls[id];
+      delete arrowEls[id];
       delete shown[id];
       delete shownJail[id];
     }

@@ -258,7 +258,7 @@ input:focus {
     background: var(--pink);
   }
 }
-.game-top .room-code {
+.game-top .top-code {
   margin-left: auto;
   font-size: 0.9rem;
   opacity: 0.85;
@@ -268,7 +268,7 @@ input:focus {
   flex: none;
 }
 @media (max-width: 420px) {
-  .game-top .room-code {
+  .game-top .top-code {
     display: none; /* su schermi stretti restano soldi e uscita */
   }
   .game-top .btn {
@@ -375,23 +375,51 @@ input:focus {
 
 .pawn {
   position: absolute;
-  width: 3.6cqw;
-  height: 3.6cqw;
+  width: 4.8cqw;
+  height: 4.8cqw;
   border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
   transform: translate(-50%, -50%);
-  border: 0.45cqw solid #fff;
+  border: 0.55cqw solid #fff;
   box-shadow:
-    0 0.5cqw 0 rgba(0, 0, 0, 0.35),
-    0 0 0 0.2cqw rgba(0, 0, 0, 0.25);
+    0 0.6cqw 0 rgba(0, 0, 0, 0.35),
+    0 0 0 0.25cqw rgba(0, 0, 0, 0.25);
   display: grid;
   place-items: center;
   color: #fff;
   font-weight: 700;
-  font-size: 1.8cqw;
+  font-size: 2.4cqw;
   transition:
     left 0.17s ease-out,
     top 0.17s ease-out;
   z-index: 2;
+}
+/* Freccetta sul bordo del tabellone che indica la casella di ogni giocatore */
+.pawn-arrow {
+  position: absolute;
+  width: 5.2cqw;
+  height: 4.2cqw;
+  transform: translate(-50%, -50%) rotate(var(--rot, 0deg));
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  background: #fff; /* bordo bianco: la freccia si vede anche su caselle dello stesso colore */
+  transition:
+    left 0.17s ease-out,
+    top 0.17s ease-out;
+  z-index: 1;
+}
+.pawn-arrow::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--c);
+  clip-path: polygon(50% 22%, 82% 88%, 18% 88%);
+}
+.pawn-arrow.active {
+  animation: arrow-pulse 0.9s ease-in-out infinite alternate;
+}
+@keyframes arrow-pulse {
+  to {
+    transform: translate(-50%, -50%) rotate(var(--rot, 0deg)) scale(1.25);
+  }
 }
 .pawn.hop {
   animation: hop 0.17s ease-out;
@@ -1083,6 +1111,7 @@ input:focus {
 } /* l'effetto, in italiano */
 .game-card .btn {
   margin: 0 18px 18px;
+  width: auto; /* con i margini, larghezza 100% uscirebbe dalla carta */
 }
 
 .victory-box .trophy {
