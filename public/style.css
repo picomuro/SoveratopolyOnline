@@ -295,6 +295,26 @@ input:focus {
 }
 
 /* ---------- Tabellone ---------- */
+/* Cornice quadrata: il padding (in % della larghezza, uguale sui quattro lati) ospita le frecce. */
+.board-frame {
+  --frame-pad: 5%;
+  position: relative;
+  padding: var(--frame-pad);
+  margin: 0 auto;
+  max-width: min(100%, calc(100vh - 24px));
+  max-width: min(100%, calc(100dvh - 24px));
+  container-type: inline-size;
+}
+@media (max-width: 899px) {
+  .board-wrap {
+    margin: 0 -10px; /* da telefono la cornice delle frecce usa anche il margine della pagina */
+  }
+}
+#arrows-layer {
+  position: absolute;
+  inset: var(--frame-pad); /* stessa area del tabellone */
+  pointer-events: none;
+}
 .board {
   position: relative;
   width: 100%;
@@ -304,8 +324,6 @@ input:focus {
   overflow: hidden;
   box-shadow: var(--shadow);
   background: #cfe8d3;
-  max-width: min(100%, calc(100vh - 24px));
-  max-width: min(100%, calc(100dvh - 24px));
   container-type: inline-size;
   user-select: none;
 }

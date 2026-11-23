@@ -69,18 +69,22 @@ export function pawnSpot(i, k, n, inJail) {
 }
 
 /**
- * Freccetta sul bordo del tabellone, del colore della pedina, puntata verso la casella del giocatore:
+ * Freccetta fuori dal tabellone, del colore della pedina, puntata verso la casella del giocatore:
  * k-esima di n frecce sulla stessa casella. Gli angoli usano il bordo in basso (VIA!, prigione) o in alto.
+ * Le coordinate sono in % del tabellone: le frecce stanno nella cornice attorno (vedi .board-frame).
  */
-const ARROW_EDGE = 2.3; // distanza (in %) del centro della freccia dal bordo
+const ARROW_OUT = 2.8; // distanza (in % del tabellone) del centro della freccia dal bordo, verso l'esterno
 const ARROW_ROTATE = { bottom: 0, top: 180, left: 90, right: -90 };
 export function arrowSpot(i, k, n) {
   const r = cellRect(i);
   const side = r.side === 'corner' ? (i < 20 ? 'bottom' : 'top') : r.side;
-  const shift = (k - (n - 1) / 2) * 3.6;
-  const along = side === 'bottom' || side === 'top' ? (r.x0 + r.x1) / 2 + shift : (r.y0 + r.y1) / 2 + shift;
-  const edge = side === 'bottom' || side === 'right' ? 100 - ARROW_EDGE : ARROW_EDGE;
   const vertical = side === 'bottom' || side === 'top';
+  const center = vertical ? (r.x0 + r.x1) / 2 : (r.y0 + r.y1) / 2;
+  // Frecce affiancate senza sovrapporsi; il gruppo resta entro il lato del tabellone.
+  const step = Math.min(6, 90 / Math.max(1, n - 1));
+  const first = Math.min(Math.max(center - ((n - 1) / 2) * step, 4), 96 - (n - 1) * step);
+  const along = first + k * step;
+  const edge = side === 'bottom' || side === 'right' ? 100 + ARROW_OUT : -ARROW_OUT;
   return { x: vertical ? along : edge, y: vertical ? edge : along, rotate: ARROW_ROTATE[side] };
 }
 
@@ -153,7 +157,7 @@ export function layoutPawns(activeId = null) {
       const arrow = document.createElement('div');
       arrow.className = 'pawn-arrow';
       arrow.style.setProperty('--c', p.color);
-      layer.appendChild(arrow);
+      $('#arrows-layer').appendChild(arrow);
       arrowEls[p.id] = arrow;
     }
     if (shown[p.id] === undefined) {

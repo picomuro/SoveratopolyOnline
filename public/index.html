@@ -119,15 +119,19 @@
       </header>
       <div class="game-layout">
         <div class="board-wrap">
-          <div id="board" class="board">
-            <img src="img/board.jpg" alt="Tabellone Soveratopoly" draggable="false" />
-            <div id="cells-layer"></div>
-            <div id="pawns-layer"></div>
-            <div id="dice" class="dice-area">
-              <div class="die" id="die1"></div>
-              <div class="die" id="die2"></div>
+          <!-- La cornice lascia spazio attorno al tabellone per le frecce dei giocatori -->
+          <div class="board-frame">
+            <div id="board" class="board">
+              <img src="img/board.jpg" alt="Tabellone Soveratopoly" draggable="false" />
+              <div id="cells-layer"></div>
+              <div id="pawns-layer"></div>
+              <div id="dice" class="dice-area">
+                <div class="die" id="die1"></div>
+                <div class="die" id="die2"></div>
+              </div>
+              <div id="reaction-layer"></div>
             </div>
-            <div id="reaction-layer"></div>
+            <div id="arrows-layer"></div>
           </div>
         </div>
 
